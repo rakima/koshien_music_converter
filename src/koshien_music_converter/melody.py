@@ -118,29 +118,31 @@ def simplify_note_regions(
 ) -> list[tuple[int, float, float, float]]:
     """揺れの多い採譜結果を応援ラッパ向けの単純なノート列へする。"""
     grid = 60 / bpm / settings.quantize_subdivision
+    normalized = [
+        (
+            normalize_midi_pitch(
+                pitch, settings.minimum_midi_note, settings.maximum_midi_note
+            ),
+            start,
+            end,
+            level,
+        )
+        for pitch, start, end, level in regions
+    ]
+    merged = merge_similar_notes(normalized, bpm=bpm, settings=settings)
     simplified: list[tuple[int, float, float, float]] = []
 
-    for pitch, start, end, level in regions:
+    for pitch, start, end, level in merged:
         if end - start < settings.minimum_note_duration:
             continue
-        pitch = normalize_midi_pitch(
-            pitch, settings.minimum_midi_note, settings.maximum_midi_note
-        )
         quantized_start = round(start / grid) * grid
         quantized_duration = max(grid, round((end - start) / grid) * grid)
         quantized_end = quantized_start + quantized_duration
 
         if simplified:
-            previous_pitch, previous_start, previous_end, previous_level = simplified[-1]
-            gap = quantized_start - previous_end
-            if abs(pitch - previous_pitch) <= 1 and gap <= grid:
-                simplified[-1] = (
-                    previous_pitch,
-                    previous_start,
-                    max(previous_end, quantized_end),
-                    max(previous_level, level),
-                )
-                continue
+            _previous_pitch, _previous_start, previous_end, _previous_level = (
+                simplified[-1]
+            )
             if quantized_start < previous_end:
                 quantized_start = previous_end
                 quantized_end = max(quantized_end, quantized_start + grid)
@@ -148,6 +150,39 @@ def simplify_note_regions(
         simplified.append((pitch, quantized_start, quantized_end, level))
 
     return remove_ornamental_turns(simplified, grid=grid)
+
+
+def merge_similar_notes(
+    notes: list[tuple[int, float, float, float]],
+    *,
+    bpm: float,
+    settings: ArrangementSettings,
+) -> list[tuple[int, float, float, float]]:
+    """短い間隔で続く同音・近似音を、明確な連打を残しながら統合する。"""
+    if not notes:
+        return []
+    maximum_gap = 60 / bpm * settings.same_note_merge_max_gap_beats
+    maximum_duration = 60 / bpm * settings.maximum_merged_note_beats
+    merged = [notes[0]]
+
+    for pitch, start, end, level in notes[1:]:
+        previous_pitch, previous_start, previous_end, previous_level = merged[-1]
+        gap = start - previous_end
+        combined_end = max(previous_end, end)
+        if (
+            abs(pitch - previous_pitch) <= settings.same_note_pitch_tolerance
+            and gap <= maximum_gap
+            and combined_end - previous_start <= maximum_duration
+        ):
+            merged[-1] = (
+                previous_pitch,
+                previous_start,
+                combined_end,
+                max(previous_level, level),
+            )
+        else:
+            merged.append((pitch, start, end, level))
+    return merged
 
 
 def remove_ornamental_turns(

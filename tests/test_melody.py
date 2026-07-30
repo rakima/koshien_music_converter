@@ -4,6 +4,7 @@ from koshien_music_converter.config import ArrangementSettings
 from koshien_music_converter.melody import (
     articulate_note_regions,
     extract_note_regions,
+    merge_similar_notes,
     normalize_midi_pitch,
     remove_ornamental_turns,
     simplify_note_regions,
@@ -57,7 +58,7 @@ def test_simplify_notes_removes_short_notes_and_merges_pitch_wobble() -> None:
     )
 
     assert simplified == [
-        (71, 0.0, 0.5, 0.7),
+        (71, 0.0, 0.25, 0.7),
         (64, 0.5, 0.75, 0.6),
     ]
     assert len(simplified) < len(regions)
@@ -119,3 +120,23 @@ def test_simplified_notes_are_monophonic() -> None:
         current[2] <= following[1]
         for current, following in zip(simplified, simplified[1:], strict=False)
     )
+
+
+def test_merge_similar_notes_keeps_deliberate_repetition() -> None:
+    settings = ArrangementSettings(
+        same_note_pitch_tolerance=1,
+        same_note_merge_max_gap_beats=0.25,
+        maximum_merged_note_beats=2,
+    )
+    notes = [
+        (72, 0.0, 0.2, 0.6),
+        (73, 0.22, 0.4, 0.8),
+        (72, 0.7, 0.9, 0.7),
+    ]
+
+    merged = merge_similar_notes(notes, bpm=120, settings=settings)
+
+    assert merged == [
+        (72, 0.0, 0.4, 0.8),
+        (72, 0.7, 0.9, 0.7),
+    ]

@@ -68,3 +68,8 @@ def test_arrangement_rejects_excessive_tone_boost() -> None:
     with pytest.raises(ConversionError, match="ラッパ中域"):
         ArrangementSettings(brass_presence_db=13).validate()
 
+
+def test_arrangement_rejects_invalid_same_note_tolerance() -> None:
+    with pytest.raises(ConversionError, match="同音判定"):
+        ArrangementSettings(same_note_pitch_tolerance=13).validate()
+
