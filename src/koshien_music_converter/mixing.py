@@ -24,3 +24,20 @@ def build_mastering_filter(settings: ArrangementSettings) -> str:
 
 def target_peak_linear(settings: ArrangementSettings) -> float:
     return math.pow(10, settings.target_peak_dbfs / 20)
+
+
+def build_mix_filter(settings: ArrangementSettings) -> str:
+    """各ステムを設定された比率でまとめ、最後にマスタリングする。"""
+    mastering = build_mastering_filter(settings)
+    return (
+        f"[0:a]volume={settings.brass_volume}[brass];"
+        f"[1:a]volume={settings.generated_drum_volume}[drums];"
+        f"[2:a]volume={settings.original_drum_volume}[original_drums];"
+        "[3:a][4:a]amix=inputs=2:normalize=0[accompaniment_raw];"
+        f"[accompaniment_raw]volume={settings.accompaniment_volume}"
+        "[accompaniment];"
+        f"[5:a]volume={settings.vocal_volume}[vocals];"
+        "[brass][drums][original_drums][accompaniment][vocals]"
+        "amix=inputs=5:duration=longest:normalize=0,"
+        f"aecho=0.8:0.25:55:0.12,{mastering}[out]"
+    )

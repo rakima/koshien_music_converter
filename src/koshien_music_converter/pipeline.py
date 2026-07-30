@@ -10,7 +10,7 @@ from .config import ConversionConfig
 from .drums import estimate_bpm, generate_cheer_drums
 from .errors import ConversionError
 from .melody import transcribe_melody
-from .mixing import build_mastering_filter
+from .mixing import build_mix_filter
 
 ProgressCallback = Callable[[int, str], None]
 
@@ -134,11 +134,14 @@ class ConversionPipeline:
             self._log(f"応援太鼓: BPM={bpm:.1f}, イベント数={drum_events}")
 
             self._notify(90, "ブラスと応援太鼓をミックスしています")
-            mastering_filter = build_mastering_filter(config.arrangement)
+            mix_filter = build_mix_filter(config.arrangement)
             self._log(
                 "ミックス音量: "
                 f"ラッパ={config.arrangement.brass_volume:.2f}, "
-                f"太鼓={config.arrangement.generated_drum_volume:.2f}, "
+                f"生成太鼓={config.arrangement.generated_drum_volume:.2f}, "
+                f"原曲ドラム={config.arrangement.original_drum_volume:.2f}, "
+                f"伴奏={config.arrangement.accompaniment_volume:.2f}, "
+                f"ボーカル={config.arrangement.vocal_volume:.2f}; "
                 f"目標={config.arrangement.target_loudness_lufs:.1f} LUFS, "
                 f"ピーク={config.arrangement.target_peak_dbfs:.1f} dBFS"
             )
@@ -146,14 +149,10 @@ class ConversionPipeline:
                 [
                     ffmpeg, "-y", "-hide_banner", "-loglevel", "warning",
                     "-i", str(brass), "-i", str(cheer_drums),
-                    "-i", str(original_taiko), "-i", str(stems / "bass.wav"),
-                    "-filter_complex",
-                    f"[0:a]volume={config.arrangement.brass_volume}[b];"
-                    f"[1:a]volume={config.arrangement.generated_drum_volume}[d];"
-                    f"[2:a]volume={config.arrangement.original_drum_volume}[od];"
-                    "[3:a]volume=0.38[bs];"
-                    "[b][d][od][bs]amix=inputs=4:duration=longest:normalize=0,"
-                    f"aecho=0.8:0.25:55:0.12,{mastering_filter}[out]",
+                    "-i", str(original_taiko), "-i", str(stems / "other.wav"),
+                    "-i", str(stems / "bass.wav"),
+                    "-i", str(stems / "vocals.wav"),
+                    "-filter_complex", mix_filter,
                     "-map", "[out]", "-t", str(config.duration),
                     "-codec:a", "libmp3lame", "-q:a", "2",
                     str(config.output_path),
