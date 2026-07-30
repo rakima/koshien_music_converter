@@ -4,6 +4,7 @@ from koshien_music_converter.config import ArrangementSettings
 from koshien_music_converter.mixing import (
     build_mix_filter,
     build_mastering_filter,
+    parse_max_volume,
     target_peak_linear,
 )
 
@@ -43,3 +44,12 @@ def test_mix_filter_uses_configured_part_volumes() -> None:
     assert "[accompaniment_raw]volume=0.15[accompaniment]" in audio_filter
     assert "[5:a]volume=0[vocals]" in audio_filter
     assert "amix=inputs=5" in audio_filter
+
+
+def test_parse_max_volume() -> None:
+    lines = [
+        "[Parsed_volumedetect_0] mean_volume: -15.2 dB",
+        "[Parsed_volumedetect_0] max_volume: -1.0 dB",
+    ]
+
+    assert parse_max_volume(lines) == -1.0

@@ -10,7 +10,7 @@ from .config import ConversionConfig
 from .drums import estimate_bpm, generate_cheer_drums
 from .errors import ConversionError
 from .melody import transcribe_melody
-from .mixing import build_mix_filter
+from .mixing import build_mix_filter, parse_max_volume
 
 ProgressCallback = Callable[[int, str], None]
 
@@ -159,6 +159,7 @@ class ConversionPipeline:
                 ],
                 self._log,
             )
+            self._verify_output(ffmpeg, config)
         self._notify(100, f"完了: {config.output_path}")
 
     def _require_stems(self, stems: Path) -> None:
@@ -176,3 +177,24 @@ class ConversionPipeline:
 
     def _log(self, message: str) -> None:
         self._progress(-1, message)
+
+    def _verify_output(self, ffmpeg: str, config: ConversionConfig) -> None:
+        if not config.output_path.is_file() or config.output_path.stat().st_size == 0:
+            raise ConversionError("最終出力が生成されていないか、無音ファイルです。")
+        self._notify(97, "最終出力のピークを確認しています")
+        output = run_command(
+            [
+                ffmpeg, "-hide_banner", "-i", str(config.output_path),
+                "-af", "volumedetect", "-f", "null", "-",
+            ],
+            self._log,
+        )
+        max_volume = parse_max_volume(output)
+        if max_volume is None:
+            raise ConversionError("最終出力のピークを確認できませんでした。")
+        if max_volume <= -60:
+            raise ConversionError("最終出力がほぼ無音です。")
+        self._log(
+            f"最終出力ピーク: {max_volume:.1f} dBFS "
+            f"(目標 {config.arrangement.target_peak_dbfs:.1f} dBFS)"
+        )

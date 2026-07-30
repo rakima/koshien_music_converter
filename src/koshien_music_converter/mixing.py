@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 
 from .config import ArrangementSettings
 
@@ -41,3 +42,11 @@ def build_mix_filter(settings: ArrangementSettings) -> str:
         "amix=inputs=5:duration=longest:normalize=0,"
         f"aecho=0.8:0.25:55:0.12,{mastering}[out]"
     )
+
+
+def parse_max_volume(lines: list[str]) -> float | None:
+    for line in lines:
+        match = re.search(r"max_volume:\s*(-?(?:\d+(?:\.\d+)?|inf))\s*dB", line)
+        if match:
+            return float(match.group(1))
+    return None
