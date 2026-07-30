@@ -125,7 +125,7 @@ def simplify_note_regions(
         if simplified:
             previous_pitch, previous_start, previous_end, previous_level = simplified[-1]
             gap = quantized_start - previous_end
-            if abs(pitch - previous_pitch) <= 1 and gap <= grid / 2:
+            if abs(pitch - previous_pitch) <= 1 and gap <= grid:
                 simplified[-1] = (
                     previous_pitch,
                     previous_start,
@@ -139,7 +139,41 @@ def simplify_note_regions(
 
         simplified.append((pitch, quantized_start, quantized_end, level))
 
-    return simplified
+    return remove_ornamental_turns(simplified, grid=grid)
+
+
+def remove_ornamental_turns(
+    notes: list[tuple[int, float, float, float]],
+    *,
+    grid: float,
+) -> list[tuple[int, float, float, float]]:
+    """元の音へすぐ戻る短い装飾音を取り除く。"""
+    reduced: list[tuple[int, float, float, float]] = []
+    index = 0
+    while index < len(notes):
+        if index + 2 < len(notes):
+            first = notes[index]
+            ornament = notes[index + 1]
+            returning = notes[index + 2]
+            ornament_duration = ornament[2] - ornament[1]
+            if (
+                ornament_duration <= grid
+                and abs(first[0] - returning[0]) <= 1
+                and abs(first[0] - ornament[0]) >= 2
+            ):
+                reduced.append(
+                    (
+                        first[0],
+                        first[1],
+                        returning[2],
+                        max(first[3], returning[3]),
+                    )
+                )
+                index += 3
+                continue
+        reduced.append(notes[index])
+        index += 1
+    return reduced
 
 
 def articulate_note_regions(
