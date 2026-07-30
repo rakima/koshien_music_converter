@@ -1,0 +1,127 @@
+from __future__ import annotations
+
+import sys
+import tempfile
+from collections.abc import Callable
+from pathlib import Path
+
+from .commands import require_command, run_command
+from .config import ConversionConfig
+from .errors import ConversionError
+from .melody import transcribe_melody
+
+ProgressCallback = Callable[[int, str], None]
+
+
+class ConversionPipeline:
+    def __init__(self, progress: ProgressCallback | None = None) -> None:
+        self._progress = progress or (lambda _value, _message: None)
+
+    def convert(self, config: ConversionConfig) -> None:
+        config.validate()
+        ffmpeg = require_command("ffmpeg")
+        fluidsynth = require_command("fluidsynth")
+
+        with tempfile.TemporaryDirectory(prefix="koshien_converter_") as temp:
+            work = Path(temp)
+            clip = work / "clip.wav"
+            self._notify(5, "指定区間を切り抜いています")
+            run_command(
+                [
+                    ffmpeg, "-y", "-hide_banner", "-loglevel", "warning",
+                    "-ss", str(config.start_seconds),
+                    "-t", str(config.duration),
+                    "-i", str(config.input_path),
+                    "-ar", "44100", "-ac", "2", str(clip),
+                ],
+                self._log,
+            )
+
+            self._notify(15, "AIで楽器を分離しています（初回はモデルを取得します）")
+            run_command(
+                [
+                    sys.executable, "-m", "demucs", "--name", "htdemucs",
+                    "--out", str(work / "separated"), str(clip),
+                ],
+                self._log,
+            )
+            stems = work / "separated" / "htdemucs" / clip.stem
+            self._require_stems(stems)
+
+            melody_source = work / "melody_source.wav"
+            self._notify(52, "主旋律用の音声を作っています")
+            run_command(
+                [
+                    ffmpeg, "-y", "-hide_banner", "-loglevel", "warning",
+                    "-i", str(stems / "vocals.wav"), "-i", str(stems / "other.wav"),
+                    "-filter_complex",
+                    "[0:a]volume=1.2[v];[1:a]volume=0.65[o];"
+                    "[v][o]amix=inputs=2:normalize=0,alimiter=limit=0.95",
+                    str(melody_source),
+                ],
+                self._log,
+            )
+
+            midi_path = work / "melody.mid"
+            self._notify(60, "主旋律を採譜しています")
+            transcribe_melody(melody_source, midi_path)
+            brass = work / "brass.wav"
+            self._notify(72, "主旋律をトランペット音へ変換しています")
+            run_command(
+                [
+                    fluidsynth, "-ni", str(config.soundfont_path), str(midi_path),
+                    "-F", str(brass), "-r", "44100",
+                ],
+                self._log,
+            )
+
+            taiko = work / "taiko.wav"
+            self._notify(82, "ドラムを応援太鼓風に加工しています")
+            run_command(
+                [
+                    ffmpeg, "-y", "-hide_banner", "-loglevel", "warning",
+                    "-i", str(stems / "drums.wav"),
+                    "-af",
+                    "highpass=f=45,lowpass=f=4800,"
+                    "bass=g=10:f=110:w=0.7,"
+                    "acompressor=threshold=-20dB:ratio=5:attack=3:release=100,"
+                    "volume=1.35,alimiter=limit=0.95",
+                    str(taiko),
+                ],
+                self._log,
+            )
+
+            self._notify(90, "ブラスと応援太鼓をミックスしています")
+            run_command(
+                [
+                    ffmpeg, "-y", "-hide_banner", "-loglevel", "warning",
+                    "-i", str(brass), "-i", str(taiko),
+                    "-i", str(stems / "bass.wav"),
+                    "-filter_complex",
+                    "[0:a]volume=1.15[b];[1:a]volume=1.0[d];"
+                    "[2:a]volume=0.38[bs];"
+                    "[b][d][bs]amix=inputs=3:duration=longest:normalize=0,"
+                    "aecho=0.8:0.25:55:0.12,alimiter=limit=0.95[out]",
+                    "-map", "[out]", "-t", str(config.duration),
+                    "-codec:a", "libmp3lame", "-q:a", "2",
+                    str(config.output_path),
+                ],
+                self._log,
+            )
+        self._notify(100, f"完了: {config.output_path}")
+
+    def _require_stems(self, stems: Path) -> None:
+        missing = [
+            name for name in ("vocals.wav", "other.wav", "drums.wav", "bass.wav")
+            if not (stems / name).is_file()
+        ]
+        if missing:
+            raise ConversionError(
+                "ステム分離結果が不足しています: " + ", ".join(missing)
+            )
+
+    def _notify(self, value: int, message: str) -> None:
+        self._progress(value, message)
+
+    def _log(self, message: str) -> None:
+        self._progress(-1, message)
