@@ -24,6 +24,11 @@ class ArrangementSettings:
     ornament_max_duration_beats: float = 0.5
     note_shortening_ratio: float = 0.88
     maximum_note_beats: float = 3.0
+    phrase_end_extension_ratio: float = 1.30
+    minimum_phrase_rest_beats: float = 0.35
+    phrase_boundary_gap_beats: float = 0.75
+    phrase_pitch_jump_semitones: int = 7
+    maximum_phrase_beats: float = 8.0
     brass_attack_controller: int = 20
     brass_release_controller: int = 20
     minimum_brass_velocity: int = 96
@@ -59,6 +64,16 @@ class ArrangementSettings:
             raise ConversionError("ノート短縮率は0より大きく1以下にしてください。")
         if self.maximum_note_beats <= 0:
             raise ConversionError("最大ノート拍数は0より大きくしてください。")
+        if self.phrase_end_extension_ratio < 1:
+            raise ConversionError("フレーズ末尾の延長率は1以上にしてください。")
+        if self.minimum_phrase_rest_beats < 0:
+            raise ConversionError("フレーズ間の最小休符は0以上にしてください。")
+        if self.phrase_boundary_gap_beats <= 0:
+            raise ConversionError("フレーズ境界の空白は0より大きくしてください。")
+        if not 1 <= self.phrase_pitch_jump_semitones <= 24:
+            raise ConversionError("フレーズ境界の音高差は1〜24にしてください。")
+        if self.maximum_phrase_beats <= 0:
+            raise ConversionError("最大フレーズ拍数は0より大きくしてください。")
         for controller in (
             self.brass_attack_controller,
             self.brass_release_controller,

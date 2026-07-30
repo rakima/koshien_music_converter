@@ -98,8 +98,9 @@ class ConversionPipeline:
                 f"{config.arrangement.minimum_midi_note}"
                 f"〜{config.arrangement.maximum_midi_note}; "
                 f"平均長={transcription.average_note_duration:.2f}秒, "
+                f"最短長={transcription.minimum_note_duration:.2f}秒, "
                 f"最大長={transcription.maximum_note_duration:.2f}秒, "
-                "同時発音数=1"
+                f"フレーズ数={transcription.phrase_count}, 同時発音数=1"
             )
             brass = work / "brass.wav"
             self._notify(72, "主旋律をトランペット音へ変換しています")

@@ -78,3 +78,8 @@ def test_arrangement_rejects_zero_note_density() -> None:
     with pytest.raises(ConversionError, match="最大ノート数"):
         ArrangementSettings(maximum_notes_per_beat=0).validate()
 
+
+def test_arrangement_rejects_shorter_phrase_ending() -> None:
+    with pytest.raises(ConversionError, match="延長率"):
+        ArrangementSettings(phrase_end_extension_ratio=0.9).validate()
+

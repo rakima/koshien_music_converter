@@ -13,7 +13,9 @@ class TranscriptionStats:
     raw_note_count: int
     final_note_count: int
     average_note_duration: float
+    minimum_note_duration: float
     maximum_note_duration: float
+    phrase_count: int
 
 
 def transcribe_melody(
@@ -64,6 +66,9 @@ def transcribe_melody(
         articulated_regions = adjust_note_lengths(
             simplified_regions, bpm=bpm, settings=settings
         )
+        final_regions, phrase_count = shape_note_phrases(
+            articulated_regions, bpm=bpm, settings=settings
+        )
         trumpet.control_changes.extend(
             [
                 pretty_midi.ControlChange(
@@ -74,7 +79,7 @@ def transcribe_melody(
                 ),
             ]
         )
-        for pitch, start, end, level in articulated_regions:
+        for pitch, start, end, level in final_regions:
             velocity = max(
                 settings.minimum_brass_velocity,
                 min(127, round(120 * level / reference_rms)),
@@ -88,12 +93,14 @@ def transcribe_melody(
             raise ConversionError("主旋律として扱える音程を検出できませんでした。")
         midi.instruments.append(trumpet)
         midi.write(str(destination))
-        durations = [end - start for _pitch, start, end, _level in articulated_regions]
+        durations = [end - start for _pitch, start, end, _level in final_regions]
         return TranscriptionStats(
             raw_note_count=len(regions),
-            final_note_count=len(articulated_regions),
+            final_note_count=len(final_regions),
             average_note_duration=sum(durations) / len(durations),
+            minimum_note_duration=min(durations),
             maximum_note_duration=max(durations),
+            phrase_count=phrase_count,
         )
     except ConversionError:
         raise
@@ -317,6 +324,79 @@ def adjust_note_lengths(
         )
         adjusted.append((pitch, start, start + played_duration, level))
     return adjusted
+
+
+def shape_note_phrases(
+    notes: list[tuple[int, float, float, float]],
+    *,
+    bpm: float,
+    settings: ArrangementSettings,
+) -> tuple[list[tuple[int, float, float, float]], int]:
+    """元の空白と音高跳躍から息継ぎ位置を作り、末尾音を少し伸ばす。"""
+    if not notes:
+        return [], 0
+    beat = 60 / bpm
+    boundary_gap = beat * settings.phrase_boundary_gap_beats
+    minimum_rest = beat * settings.minimum_phrase_rest_beats
+    maximum_phrase = beat * settings.maximum_phrase_beats
+    maximum_note = beat * settings.maximum_note_beats
+    shaped = list(notes)
+    phrase_start_index = 0
+    boundaries: list[int] = []
+
+    for index in range(1, len(shaped)):
+        previous = shaped[index - 1]
+        current = shaped[index]
+        gap = current[1] - previous[2]
+        phrase_duration = current[1] - shaped[phrase_start_index][1]
+        large_jump = (
+            index - phrase_start_index >= 4
+            and abs(current[0] - previous[0])
+            >= settings.phrase_pitch_jump_semitones
+        )
+        if (
+            gap >= boundary_gap
+            or phrase_duration >= maximum_phrase
+            or large_jump
+        ):
+            boundaries.append(index)
+            phrase_start_index = index
+
+    for boundary in boundaries:
+        shaped[boundary - 1] = _extend_phrase_end(
+            shaped[boundary - 1],
+            settings=settings,
+            maximum_note=maximum_note,
+            next_start=shaped[boundary][1],
+            minimum_rest=minimum_rest,
+        )
+    shaped[-1] = _extend_phrase_end(
+        shaped[-1],
+        settings=settings,
+        maximum_note=maximum_note,
+    )
+    return shaped, len(boundaries) + 1
+
+
+def _extend_phrase_end(
+    note: tuple[int, float, float, float],
+    *,
+    settings: ArrangementSettings,
+    maximum_note: float,
+    next_start: float | None = None,
+    minimum_rest: float = 0,
+) -> tuple[int, float, float, float]:
+    pitch, start, end, level = note
+    duration = end - start
+    desired_end = min(
+        start + maximum_note,
+        start + duration * settings.phrase_end_extension_ratio,
+    )
+    if next_start is not None:
+        rest_ceiling = next_start - minimum_rest
+        if rest_ceiling > start:
+            desired_end = min(desired_end, rest_ceiling)
+    return pitch, start, max(start + settings.minimum_note_duration, desired_end), level
 
 
 def extract_note_regions(

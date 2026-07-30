@@ -8,6 +8,7 @@ from koshien_music_converter.melody import (
     normalize_midi_pitch,
     quantize_note_regions,
     remove_decorative_notes,
+    shape_note_phrases,
     simplify_note_regions,
 )
 
@@ -202,3 +203,26 @@ def test_quantize_limits_notes_per_beat() -> None:
     )
 
     assert len(quantized) == 2
+
+
+def test_shape_phrases_extends_ending_and_preserves_rest() -> None:
+    settings = ArrangementSettings(
+        phrase_end_extension_ratio=1.3,
+        phrase_boundary_gap_beats=0.75,
+        minimum_phrase_rest_beats=0.35,
+    )
+
+    shaped, phrase_count = shape_note_phrases(
+        [
+            (72, 0.0, 0.4, 0.8),
+            (74, 0.5, 0.9, 0.8),
+            (76, 1.5, 1.9, 0.8),
+        ],
+        bpm=120,
+        settings=settings,
+    )
+
+    assert phrase_count == 2
+    assert shaped[1][2] == pytest.approx(1.02)
+    assert shaped[2][2] == pytest.approx(2.02)
+    assert shaped[2][1] - shaped[1][2] >= 0.175 - 1e-9
