@@ -83,3 +83,8 @@ def test_arrangement_rejects_shorter_phrase_ending() -> None:
     with pytest.raises(ConversionError, match="延長率"):
         ArrangementSettings(phrase_end_extension_ratio=0.9).validate()
 
+
+def test_arrangement_rejects_zero_cymbal_interval() -> None:
+    with pytest.raises(ConversionError, match="シンバル間隔"):
+        ArrangementSettings(cymbal_interval_bars=0).validate()
+

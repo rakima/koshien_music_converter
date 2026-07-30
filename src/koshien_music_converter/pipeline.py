@@ -118,11 +118,16 @@ class ConversionPipeline:
             self._notify(82, "応援団専用の太鼓を生成しています")
             cheer_drums = work / "cheer_drums.wav"
             drum_events = generate_cheer_drums(
-                cheer_drums, config.duration, bpm
+                cheer_drums,
+                config.duration,
+                bpm,
+                cymbal_interval_bars=config.arrangement.cymbal_interval_bars,
             )
             self._log(
                 f"応援太鼓: BPM={bpm:.1f}, "
-                f"パターン=ドン ドン ドドン ドン, イベント数={drum_events}"
+                "パターン=大太鼓 小太鼓 大太鼓 小太鼓, "
+                f"シンバル={config.arrangement.cymbal_interval_bars}小節ごと, "
+                f"イベント数={drum_events}"
             )
 
             self._notify(90, "ブラスと応援太鼓をミックスしています")

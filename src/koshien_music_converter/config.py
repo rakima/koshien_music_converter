@@ -35,6 +35,7 @@ class ArrangementSettings:
     brass_presence_db: float = 4.0
     brass_brightness_db: float = 3.0
     drum_body_db: float = 5.0
+    cymbal_interval_bars: int = 4
     target_loudness_lufs: float = -14.0
     target_peak_dbfs: float = -1.0
     loudness_range: float = 9.0
@@ -88,6 +89,8 @@ class ArrangementSettings:
         ):
             if not -12 <= value <= 12:
                 raise ConversionError(f"{name}は-12〜12 dBで指定してください。")
+        if self.cymbal_interval_bars <= 0:
+            raise ConversionError("シンバル間隔は1小節以上にしてください。")
         if self.target_peak_dbfs > 0:
             raise ConversionError("出力ピークは0 dBFS以下にしてください。")
         for name, value in (

@@ -36,8 +36,13 @@ def estimate_bpm(source: Path) -> float:
         raise ConversionError(f"BPMの解析に失敗しました: {exc}") from exc
 
 
-def build_cheer_pattern(duration: float, bpm: float) -> list[DrumEvent]:
-    """「ドン ドン ドドン ドン」の固定応援パターンをイベント列にする。"""
+def build_cheer_pattern(
+    duration: float,
+    bpm: float,
+    *,
+    cymbal_interval_bars: int = 4,
+) -> list[DrumEvent]:
+    """大太鼓と小太鼓を交互に置く安定した4拍パターン。"""
     beat_duration = 60 / bpm
     events: list[DrumEvent] = []
     bar_duration = beat_duration * 4
@@ -45,15 +50,14 @@ def build_cheer_pattern(duration: float, bpm: float) -> list[DrumEvent]:
     while (bar_start := bar_index * bar_duration) < duration:
         for beat_offset, kind in (
             (0.0, "odaiko_accent"),
-            (1.0, "odaiko"),
-            (2.0, "odaiko_accent"),
-            (2.5, "odaiko"),
-            (3.0, "odaiko"),
+            (1.0, "snare"),
+            (2.0, "odaiko"),
+            (3.0, "snare"),
         ):
             event_time = bar_start + beat_offset * beat_duration
             if event_time < duration:
                 events.append(DrumEvent(event_time, kind))
-        if bar_index % 2 == 0:
+        if bar_index % cymbal_interval_bars == 0:
             events.append(DrumEvent(bar_start, "cymbal"))
         bar_index += 1
     return events
@@ -65,6 +69,7 @@ def generate_cheer_drums(
     bpm: float,
     *,
     sample_rate: int = 44100,
+    cymbal_interval_bars: int = 4,
 ) -> int:
     try:
         import numpy as np
@@ -74,7 +79,9 @@ def generate_cheer_drums(
             "太鼓生成ライブラリを読み込めません。pip install -e . を実行してください。"
         ) from exc
 
-    events = build_cheer_pattern(duration, bpm)
+    events = build_cheer_pattern(
+        duration, bpm, cymbal_interval_bars=cymbal_interval_bars
+    )
     audio = np.zeros(math.ceil(duration * sample_rate), dtype=np.float32)
     random = np.random.default_rng(2026)
 
@@ -84,6 +91,8 @@ def generate_cheer_drums(
             sound = _odaiko_sound(sample_rate, np, accent=True)
         elif event.kind == "odaiko":
             sound = _odaiko_sound(sample_rate, np, accent=False)
+        elif event.kind == "snare":
+            sound = _snare_sound(sample_rate, np, random)
         else:
             sound = _cymbal_sound(sample_rate, np, random)
         end = min(audio.size, start + sound.size)
@@ -108,6 +117,18 @@ def _odaiko_sound(sample_rate: int, np: object, *, accent: bool) -> object:
     attack = np.exp(-time * 95) * 0.48
     gain = 1.0 if accent else 0.78
     return ((body + overtone + attack) * gain).astype(np.float32)
+
+
+def _snare_sound(sample_rate: int, np: object, random: object) -> object:
+    duration = 0.14
+    time = np.arange(round(sample_rate * duration)) / sample_rate
+    noise = random.standard_normal(time.size)
+    bright_noise = noise - np.roll(noise, 1)
+    body = np.sin(2 * np.pi * 185 * time) * np.exp(-time * 32)
+    return (
+        (bright_noise * np.exp(-time * 30) * 0.24 + body * 0.18)
+        .astype(np.float32)
+    )
 
 
 def _cymbal_sound(sample_rate: int, np: object, random: object) -> object:
