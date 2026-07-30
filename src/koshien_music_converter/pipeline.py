@@ -13,6 +13,25 @@ from .melody import transcribe_melody
 ProgressCallback = Callable[[int, str], None]
 
 
+def build_fluidsynth_command(
+    executable: str,
+    soundfont: Path,
+    midi: Path,
+    output: Path,
+) -> list[str]:
+    """Windows版でも解釈されるよう、オプションを入力ファイルより前へ置く。"""
+    return [
+        executable,
+        "-ni",
+        "-F",
+        str(output),
+        "-r",
+        "44100",
+        str(soundfont),
+        str(midi),
+    ]
+
+
 class ConversionPipeline:
     def __init__(self, progress: ProgressCallback | None = None) -> None:
         self._progress = progress or (lambda _value, _message: None)
@@ -68,12 +87,15 @@ class ConversionPipeline:
             brass = work / "brass.wav"
             self._notify(72, "主旋律をトランペット音へ変換しています")
             run_command(
-                [
-                    fluidsynth, "-ni", str(config.soundfont_path), str(midi_path),
-                    "-F", str(brass), "-r", "44100",
-                ],
+                build_fluidsynth_command(
+                    fluidsynth, config.soundfont_path, midi_path, brass
+                ),
                 self._log,
             )
+            if not brass.is_file():
+                raise ConversionError(
+                    "FluidSynthは正常終了しましたが、ブラス音声を生成できませんでした。"
+                )
 
             taiko = work / "taiko.wav"
             self._notify(82, "ドラムを応援太鼓風に加工しています")
