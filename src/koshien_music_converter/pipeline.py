@@ -116,7 +116,10 @@ class ConversionPipeline:
             drum_events = generate_cheer_drums(
                 cheer_drums, config.duration, bpm
             )
-            self._log(f"応援太鼓: BPM={bpm:.1f}, イベント数={drum_events}")
+            self._log(
+                f"応援太鼓: BPM={bpm:.1f}, "
+                f"パターン=ドン ドン ドドン ドン, イベント数={drum_events}"
+            )
 
             self._notify(90, "ブラスと応援太鼓をミックスしています")
             mix_filter = build_mix_filter(config.arrangement)
