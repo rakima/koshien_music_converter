@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .commands import require_command, run_command
 from .config import ConversionConfig
+from .drums import estimate_bpm, generate_cheer_drums
 from .errors import ConversionError
 from .melody import transcribe_melody
 from .mixing import build_mastering_filter
@@ -108,7 +109,7 @@ class ConversionPipeline:
                     "FluidSynthは正常終了しましたが、ブラス音声を生成できませんでした。"
                 )
 
-            taiko = work / "taiko.wav"
+            original_taiko = work / "original_taiko.wav"
             self._notify(82, "ドラムを応援太鼓風に加工しています")
             run_command(
                 [
@@ -119,10 +120,17 @@ class ConversionPipeline:
                     "bass=g=10:f=110:w=0.7,"
                     "acompressor=threshold=-20dB:ratio=5:attack=3:release=100,"
                     "volume=1.35,alimiter=limit=0.95",
-                    str(taiko),
+                    str(original_taiko),
                 ],
                 self._log,
             )
+
+            bpm = estimate_bpm(stems / "drums.wav")
+            cheer_drums = work / "cheer_drums.wav"
+            drum_events = generate_cheer_drums(
+                cheer_drums, config.duration, bpm
+            )
+            self._log(f"応援太鼓: BPM={bpm:.1f}, イベント数={drum_events}")
 
             self._notify(90, "ブラスと応援太鼓をミックスしています")
             mastering_filter = build_mastering_filter(config.arrangement)
@@ -136,12 +144,14 @@ class ConversionPipeline:
             run_command(
                 [
                     ffmpeg, "-y", "-hide_banner", "-loglevel", "warning",
-                    "-i", str(brass), "-i", str(taiko),
-                    "-i", str(stems / "bass.wav"),
+                    "-i", str(brass), "-i", str(cheer_drums),
+                    "-i", str(original_taiko), "-i", str(stems / "bass.wav"),
                     "-filter_complex",
-                    "[0:a]volume=1.15[b];[1:a]volume=1.0[d];"
-                    "[2:a]volume=0.38[bs];"
-                    "[b][d][bs]amix=inputs=3:duration=longest:normalize=0,"
+                    f"[0:a]volume={config.arrangement.brass_volume}[b];"
+                    f"[1:a]volume={config.arrangement.generated_drum_volume}[d];"
+                    f"[2:a]volume={config.arrangement.original_drum_volume}[od];"
+                    "[3:a]volume=0.38[bs];"
+                    "[b][d][od][bs]amix=inputs=4:duration=longest:normalize=0,"
                     f"aecho=0.8:0.25:55:0.12,{mastering_filter}[out]",
                     "-map", "[out]", "-t", str(config.duration),
                     "-codec:a", "libmp3lame", "-q:a", "2",

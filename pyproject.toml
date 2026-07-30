@@ -12,7 +12,9 @@ license = { text = "MIT" }
 dependencies = [
     "demucs>=4.1.0,<5",
     "librosa>=0.11,<1",
+    "numpy>=2.4,<3",
     "pretty-midi>=0.2.11,<1",
+    "soundfile>=0.14,<1",
 ]
 
 [project.optional-dependencies]
