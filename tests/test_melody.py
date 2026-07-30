@@ -1,8 +1,12 @@
 import pytest
 
 from koshien_music_converter.config import ArrangementSettings
-from koshien_music_converter.melody import extract_note_regions, normalize_midi_pitch
-from koshien_music_converter.melody import simplify_note_regions
+from koshien_music_converter.melody import (
+    articulate_note_regions,
+    extract_note_regions,
+    normalize_midi_pitch,
+    simplify_note_regions,
+)
 
 
 def test_extract_note_regions_groups_equal_pitch() -> None:
@@ -67,3 +71,17 @@ def test_simplified_notes_use_eighth_note_grid() -> None:
     _pitch, start, end, _level = simplified[0]
     assert start == pytest.approx(0.25)
     assert end - start == pytest.approx(0.5)
+
+
+def test_articulate_notes_adds_gap_and_caps_long_notes() -> None:
+    settings = ArrangementSettings(note_gate_ratio=0.6, maximum_note_beats=1)
+
+    articulated = articulate_note_regions(
+        [(72, 0.0, 2.0, 1.0), (74, 2.0, 2.25, 0.8)],
+        bpm=120,
+        settings=settings,
+    )
+
+    assert articulated[0][2] == pytest.approx(0.3)
+    assert articulated[1][2] == pytest.approx(2.15)
+    assert articulated[0][2] < articulated[1][1]

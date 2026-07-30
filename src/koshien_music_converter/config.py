@@ -16,6 +16,11 @@ class ArrangementSettings:
     generated_drum_volume: float = 1.1
     minimum_note_duration: float = 0.12
     quantize_subdivision: int = 2
+    note_gate_ratio: float = 0.62
+    maximum_note_beats: float = 1.0
+    brass_attack_controller: int = 20
+    brass_release_controller: int = 20
+    minimum_brass_velocity: int = 96
     target_loudness_lufs: float = -14.0
     target_peak_dbfs: float = -1.0
     loudness_range: float = 9.0
@@ -31,6 +36,17 @@ class ArrangementSettings:
             raise ConversionError("最小ノート長は0より大きくしてください。")
         if self.quantize_subdivision not in (2, 4):
             raise ConversionError("量子化単位は8分音符（2）または16分音符（4）です。")
+        if not 0 < self.note_gate_ratio <= 1:
+            raise ConversionError("ノートゲート比率は0より大きく1以下にしてください。")
+        if self.maximum_note_beats <= 0:
+            raise ConversionError("最大ノート拍数は0より大きくしてください。")
+        for controller in (
+            self.brass_attack_controller,
+            self.brass_release_controller,
+            self.minimum_brass_velocity,
+        ):
+            if not 0 <= controller <= 127:
+                raise ConversionError("MIDIコントローラー値は0〜127にしてください。")
         if self.target_peak_dbfs > 0:
             raise ConversionError("出力ピークは0 dBFS以下にしてください。")
         for name, value in (

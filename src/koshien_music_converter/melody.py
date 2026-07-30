@@ -59,8 +59,24 @@ def transcribe_melody(
         simplified_regions = simplify_note_regions(
             regions, bpm=bpm, settings=settings
         )
-        for pitch, start, end, level in simplified_regions:
-            velocity = max(55, min(120, round(105 * level / reference_rms)))
+        articulated_regions = articulate_note_regions(
+            simplified_regions, bpm=bpm, settings=settings
+        )
+        trumpet.control_changes.extend(
+            [
+                pretty_midi.ControlChange(
+                    number=73, value=settings.brass_attack_controller, time=0
+                ),
+                pretty_midi.ControlChange(
+                    number=72, value=settings.brass_release_controller, time=0
+                ),
+            ]
+        )
+        for pitch, start, end, level in articulated_regions:
+            velocity = max(
+                settings.minimum_brass_velocity,
+                min(127, round(120 * level / reference_rms)),
+            )
             trumpet.notes.append(
                 pretty_midi.Note(
                     velocity=velocity, pitch=pitch, start=start, end=end
@@ -70,7 +86,7 @@ def transcribe_melody(
             raise ConversionError("主旋律として扱える音程を検出できませんでした。")
         midi.instruments.append(trumpet)
         midi.write(str(destination))
-        return TranscriptionStats(len(regions), len(simplified_regions))
+        return TranscriptionStats(len(regions), len(articulated_regions))
     except ConversionError:
         raise
     except Exception as exc:
@@ -124,6 +140,24 @@ def simplify_note_regions(
         simplified.append((pitch, quantized_start, quantized_end, level))
 
     return simplified
+
+
+def articulate_note_regions(
+    regions: list[tuple[int, float, float, float]],
+    *,
+    bpm: float,
+    settings: ArrangementSettings,
+) -> list[tuple[int, float, float, float]]:
+    """各音の末尾に隙間を作り、短く明瞭な応援ラッパ奏法にする。"""
+    maximum_duration = 60 / bpm * settings.maximum_note_beats
+    articulated: list[tuple[int, float, float, float]] = []
+    for pitch, start, end, level in regions:
+        source_duration = end - start
+        played_duration = (
+            min(source_duration, maximum_duration) * settings.note_gate_ratio
+        )
+        articulated.append((pitch, start, start + played_duration, level))
+    return articulated
 
 
 def extract_note_regions(

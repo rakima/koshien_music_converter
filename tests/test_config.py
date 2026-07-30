@@ -58,3 +58,8 @@ def test_arrangement_rejects_invalid_midi_range() -> None:
     with pytest.raises(ConversionError, match="MIDI音域"):
         ArrangementSettings(minimum_midi_note=80, maximum_midi_note=60).validate()
 
+
+def test_arrangement_rejects_invalid_note_gate() -> None:
+    with pytest.raises(ConversionError, match="ゲート比率"):
+        ArrangementSettings(note_gate_ratio=0).validate()
+
