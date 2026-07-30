@@ -25,7 +25,7 @@ def run_command(
     log: LogCallback,
     *,
     cwd: Path | None = None,
-) -> None:
+) -> list[str]:
     display = " ".join(f'"{part}"' if " " in part else part for part in command)
     log(f"> {display}")
     try:
@@ -43,13 +43,16 @@ def run_command(
         raise ConversionError(f"コマンドを開始できませんでした: {exc}") from exc
 
     assert process.stdout is not None
+    output: list[str] = []
     for line in process.stdout:
         line = line.strip()
         if line:
+            output.append(line)
             log(line)
     return_code = process.wait()
     if return_code != 0:
         raise ConversionError(
             f"外部コマンドが終了コード {return_code} で失敗しました。"
         )
+    return output
 

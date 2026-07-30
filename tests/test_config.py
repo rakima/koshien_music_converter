@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from koshien_music_converter.config import ConversionConfig
+from koshien_music_converter.config import ArrangementSettings, ConversionConfig
 from koshien_music_converter.errors import ConversionError
 
 
@@ -52,4 +52,9 @@ def test_output_must_be_mp3(valid_config: ConversionConfig) -> None:
     )
     with pytest.raises(ConversionError, match="拡張子"):
         config.validate()
+
+
+def test_arrangement_rejects_invalid_midi_range() -> None:
+    with pytest.raises(ConversionError, match="MIDI音域"):
+        ArrangementSettings(minimum_midi_note=80, maximum_midi_note=60).validate()
 

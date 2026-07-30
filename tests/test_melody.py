@@ -1,6 +1,8 @@
 import pytest
 
-from koshien_music_converter.melody import extract_note_regions
+from koshien_music_converter.config import ArrangementSettings
+from koshien_music_converter.melody import extract_note_regions, normalize_midi_pitch
+from koshien_music_converter.melody import simplify_note_regions
 
 
 def test_extract_note_regions_groups_equal_pitch() -> None:
@@ -25,3 +27,43 @@ def test_extract_note_regions_discards_short_notes() -> None:
     )
 
     assert notes == []
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [(48, 60), (59, 71), (60, 60), (84, 84), (85, 73), (96, 84)],
+)
+def test_normalize_midi_pitch_uses_trumpet_range(
+    source: int, expected: int
+) -> None:
+    assert normalize_midi_pitch(source, minimum=60, maximum=84) == expected
+
+
+def test_simplify_notes_removes_short_notes_and_merges_pitch_wobble() -> None:
+    regions = [
+        (71, 0.01, 0.20, 0.5),
+        (72, 0.21, 0.38, 0.7),
+        (67, 0.39, 0.44, 0.8),
+        (64, 0.51, 0.78, 0.6),
+    ]
+
+    simplified = simplify_note_regions(
+        regions, bpm=120, settings=ArrangementSettings()
+    )
+
+    assert simplified == [
+        (71, 0.0, 0.5, 0.7),
+        (64, 0.5, 0.75, 0.6),
+    ]
+    assert len(simplified) < len(regions)
+
+
+def test_simplified_notes_use_eighth_note_grid() -> None:
+    settings = ArrangementSettings(quantize_subdivision=2)
+    simplified = simplify_note_regions(
+        [(72, 0.13, 0.51, 1.0)], bpm=120, settings=settings
+    )
+
+    _pitch, start, end, _level = simplified[0]
+    assert start == pytest.approx(0.25)
+    assert end - start == pytest.approx(0.5)

@@ -1,12 +1,25 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from pathlib import Path
 
+from .config import ArrangementSettings
 from .errors import ConversionError, DependencyError
 
 
-def transcribe_melody(source: Path, destination: Path) -> None:
+@dataclass(frozen=True)
+class TranscriptionStats:
+    raw_note_count: int
+    final_note_count: int
+
+
+def transcribe_melody(
+    source: Path,
+    destination: Path,
+    settings: ArrangementSettings,
+    bpm: float,
+) -> TranscriptionStats:
     """音声の最も強いピッチ軌跡をトランペットMIDIへ変換する。"""
     try:
         import librosa
@@ -40,9 +53,13 @@ def transcribe_melody(source: Path, destination: Path) -> None:
         valid_rms = rms[rms > 0]
         reference_rms = float(np.percentile(valid_rms, 90)) if valid_rms.size else 1.0
 
-        for pitch, start, end, level in extract_note_regions(
-            frequencies, voiced, times, rms
-        ):
+        regions = extract_note_regions(
+            frequencies, voiced, times, rms, minimum_duration=0.04
+        )
+        simplified_regions = simplify_note_regions(
+            regions, bpm=bpm, settings=settings
+        )
+        for pitch, start, end, level in simplified_regions:
             velocity = max(55, min(120, round(105 * level / reference_rms)))
             trumpet.notes.append(
                 pretty_midi.Note(
@@ -53,10 +70,60 @@ def transcribe_melody(source: Path, destination: Path) -> None:
             raise ConversionError("主旋律として扱える音程を検出できませんでした。")
         midi.instruments.append(trumpet)
         midi.write(str(destination))
+        return TranscriptionStats(len(regions), len(simplified_regions))
     except ConversionError:
         raise
     except Exception as exc:
         raise ConversionError(f"主旋律の採譜に失敗しました: {exc}") from exc
+
+
+def normalize_midi_pitch(pitch: int, minimum: int, maximum: int) -> int:
+    """音名を保ったまま、トランペット向け音域へオクターブ移動する。"""
+    while pitch < minimum:
+        pitch += 12
+    while pitch > maximum:
+        pitch -= 12
+    return max(minimum, min(maximum, pitch))
+
+
+def simplify_note_regions(
+    regions: list[tuple[int, float, float, float]],
+    *,
+    bpm: float,
+    settings: ArrangementSettings,
+) -> list[tuple[int, float, float, float]]:
+    """揺れの多い採譜結果を応援ラッパ向けの単純なノート列へする。"""
+    grid = 60 / bpm / settings.quantize_subdivision
+    simplified: list[tuple[int, float, float, float]] = []
+
+    for pitch, start, end, level in regions:
+        if end - start < settings.minimum_note_duration:
+            continue
+        pitch = normalize_midi_pitch(
+            pitch, settings.minimum_midi_note, settings.maximum_midi_note
+        )
+        quantized_start = round(start / grid) * grid
+        quantized_duration = max(grid, round((end - start) / grid) * grid)
+        quantized_end = quantized_start + quantized_duration
+
+        if simplified:
+            previous_pitch, previous_start, previous_end, previous_level = simplified[-1]
+            gap = quantized_start - previous_end
+            if abs(pitch - previous_pitch) <= 1 and gap <= grid / 2:
+                simplified[-1] = (
+                    previous_pitch,
+                    previous_start,
+                    max(previous_end, quantized_end),
+                    max(previous_level, level),
+                )
+                continue
+            if quantized_start < previous_end:
+                quantized_start = previous_end
+                quantized_end = max(quantized_end, quantized_start + grid)
+
+        simplified.append((pitch, quantized_start, quantized_end, level))
+
+    return simplified
 
 
 def extract_note_regions(

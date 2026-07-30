@@ -7,8 +7,10 @@ from pathlib import Path
 
 from .commands import require_command, run_command
 from .config import ConversionConfig
+from .drums import estimate_bpm, generate_cheer_drums
 from .errors import ConversionError
 from .melody import transcribe_melody
+from .mixing import build_mix_filter, parse_max_volume, peak_is_within_ceiling
 
 ProgressCallback = Callable[[int, str], None]
 
@@ -66,6 +68,8 @@ class ConversionPipeline:
             )
             stems = work / "separated" / "htdemucs" / clip.stem
             self._require_stems(stems)
+            bpm = estimate_bpm(stems / "drums.wav")
+            self._log(f"解析テンポ: {bpm:.1f} BPM")
 
             melody_source = work / "melody_source.wav"
             self._notify(52, "主旋律用の音声を作っています")
@@ -74,7 +78,7 @@ class ConversionPipeline:
                     ffmpeg, "-y", "-hide_banner", "-loglevel", "warning",
                     "-i", str(stems / "vocals.wav"), "-i", str(stems / "other.wav"),
                     "-filter_complex",
-                    "[0:a]volume=1.2[v];[1:a]volume=0.65[o];"
+                    "[0:a]volume=1.2[v];[1:a]volume=0.15[o];"
                     "[v][o]amix=inputs=2:normalize=0,alimiter=limit=0.95",
                     str(melody_source),
                 ],
@@ -83,7 +87,17 @@ class ConversionPipeline:
 
             midi_path = work / "melody.mid"
             self._notify(60, "主旋律を採譜しています")
-            transcribe_melody(melody_source, midi_path)
+            transcription = transcribe_melody(
+                melody_source, midi_path, config.arrangement, bpm
+            )
+            self._log(
+                "MIDIノート数: "
+                f"抽出={transcription.raw_note_count}, "
+                f"補正後={transcription.final_note_count}; "
+                "音域="
+                f"{config.arrangement.minimum_midi_note}"
+                f"〜{config.arrangement.maximum_midi_note}"
+            )
             brass = work / "brass.wav"
             self._notify(72, "主旋律をトランペット音へ変換しています")
             run_command(
@@ -97,39 +111,55 @@ class ConversionPipeline:
                     "FluidSynthは正常終了しましたが、ブラス音声を生成できませんでした。"
                 )
 
-            taiko = work / "taiko.wav"
+            original_taiko = work / "original_taiko.wav"
             self._notify(82, "ドラムを応援太鼓風に加工しています")
             run_command(
                 [
                     ffmpeg, "-y", "-hide_banner", "-loglevel", "warning",
                     "-i", str(stems / "drums.wav"),
                     "-af",
-                    "highpass=f=45,lowpass=f=4800,"
+                    "volume=0.4,highpass=f=45,lowpass=f=4800,"
                     "bass=g=10:f=110:w=0.7,"
                     "acompressor=threshold=-20dB:ratio=5:attack=3:release=100,"
                     "volume=1.35,alimiter=limit=0.95",
-                    str(taiko),
+                    str(original_taiko),
                 ],
                 self._log,
             )
 
+            cheer_drums = work / "cheer_drums.wav"
+            drum_events = generate_cheer_drums(
+                cheer_drums, config.duration, bpm
+            )
+            self._log(f"応援太鼓: BPM={bpm:.1f}, イベント数={drum_events}")
+
             self._notify(90, "ブラスと応援太鼓をミックスしています")
+            mix_filter = build_mix_filter(config.arrangement)
+            self._log(
+                "ミックス音量: "
+                f"ラッパ={config.arrangement.brass_volume:.2f}, "
+                f"生成太鼓={config.arrangement.generated_drum_volume:.2f}, "
+                f"原曲ドラム={config.arrangement.original_drum_volume:.2f}, "
+                f"伴奏={config.arrangement.accompaniment_volume:.2f}, "
+                f"ボーカル={config.arrangement.vocal_volume:.2f}; "
+                f"目標={config.arrangement.target_loudness_lufs:.1f} LUFS, "
+                f"ピーク={config.arrangement.target_peak_dbfs:.1f} dBFS"
+            )
             run_command(
                 [
                     ffmpeg, "-y", "-hide_banner", "-loglevel", "warning",
-                    "-i", str(brass), "-i", str(taiko),
+                    "-i", str(brass), "-i", str(cheer_drums),
+                    "-i", str(original_taiko), "-i", str(stems / "other.wav"),
                     "-i", str(stems / "bass.wav"),
-                    "-filter_complex",
-                    "[0:a]volume=1.15[b];[1:a]volume=1.0[d];"
-                    "[2:a]volume=0.38[bs];"
-                    "[b][d][bs]amix=inputs=3:duration=longest:normalize=0,"
-                    "aecho=0.8:0.25:55:0.12,alimiter=limit=0.95[out]",
+                    "-i", str(stems / "vocals.wav"),
+                    "-filter_complex", mix_filter,
                     "-map", "[out]", "-t", str(config.duration),
                     "-codec:a", "libmp3lame", "-q:a", "2",
                     str(config.output_path),
                 ],
                 self._log,
             )
+            self._verify_output(ffmpeg, config)
         self._notify(100, f"完了: {config.output_path}")
 
     def _require_stems(self, stems: Path) -> None:
@@ -147,3 +177,30 @@ class ConversionPipeline:
 
     def _log(self, message: str) -> None:
         self._progress(-1, message)
+
+    def _verify_output(self, ffmpeg: str, config: ConversionConfig) -> None:
+        if not config.output_path.is_file() or config.output_path.stat().st_size == 0:
+            raise ConversionError("最終出力が生成されていないか、無音ファイルです。")
+        self._notify(97, "最終出力のピークを確認しています")
+        output = run_command(
+            [
+                ffmpeg, "-hide_banner", "-i", str(config.output_path),
+                "-af", "volumedetect", "-f", "null", "-",
+            ],
+            self._log,
+        )
+        max_volume = parse_max_volume(output)
+        if max_volume is None:
+            raise ConversionError("最終出力のピークを確認できませんでした。")
+        if max_volume <= -60:
+            raise ConversionError("最終出力がほぼ無音です。")
+        if not peak_is_within_ceiling(
+            max_volume, config.arrangement.target_peak_dbfs
+        ):
+            raise ConversionError(
+                f"最終出力ピーク {max_volume:.1f} dBFS が目標を超えています。"
+            )
+        self._log(
+            f"最終出力ピーク: {max_volume:.1f} dBFS "
+            f"(目標 {config.arrangement.target_peak_dbfs:.1f} dBFS)"
+        )
