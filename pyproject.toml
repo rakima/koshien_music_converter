@@ -17,6 +17,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8,<9"]
 
+[project.gui-scripts]
+koshien-music-converter = "koshien_music_converter.app:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
