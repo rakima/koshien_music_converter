@@ -14,9 +14,6 @@ class ArrangementSettings:
     maximum_midi_note: int = 84
     brass_volume: float = 1.15
     generated_drum_volume: float = 1.1
-    original_drum_volume: float = 0.25
-    accompaniment_volume: float = 0.20
-    vocal_volume: float = 0.05
     minimum_note_duration: float = 0.12
     quantize_subdivision: int = 2
     target_loudness_lufs: float = -14.0
@@ -39,9 +36,6 @@ class ArrangementSettings:
         for name, value in (
             ("ラッパ音量", self.brass_volume),
             ("生成太鼓音量", self.generated_drum_volume),
-            ("原曲ドラム音量", self.original_drum_volume),
-            ("伴奏音量", self.accompaniment_volume),
-            ("ボーカル音量", self.vocal_volume),
         ):
             if value < 0:
                 raise ConversionError(f"{name}は0以上にしてください。")
