@@ -206,6 +206,19 @@ def test_quantize_limits_notes_per_beat() -> None:
     assert len(quantized) == 2
 
 
+def test_quantize_skips_sixteenth_below_minimum_duration() -> None:
+    quantized = quantize_note_regions(
+        [(72, 0.09, 0.18, 0.8)],
+        bpm=180,
+        settings=ArrangementSettings(
+            minimum_note_duration=0.1,
+            allow_sixteenth_notes=True,
+        ),
+    )
+
+    assert quantized[0][2] - quantized[0][1] == pytest.approx(1 / 6)
+
+
 def test_shape_phrases_extends_ending_and_preserves_rest() -> None:
     settings = ArrangementSettings(
         phrase_end_extension_ratio=1.3,

@@ -290,12 +290,21 @@ def quantize_note_regions(
     for pitch, start, end, level in notes:
         source_duration = end - start
         use_sixteenth_grid = (
-            settings.allow_sixteenth_notes and source_duration < eighth * 0.75
+            settings.allow_sixteenth_notes
+            and sixteenth >= settings.minimum_note_duration
+            and source_duration < eighth * 0.75
         )
         start_grid = sixteenth if use_sixteenth_grid else eighth
         quantized_start = round(start / start_grid) * start_grid
+        allowed_durations = [
+            duration
+            for duration in duration_candidates
+            if duration >= settings.minimum_note_duration
+        ]
+        if not allowed_durations:
+            allowed_durations = [settings.minimum_note_duration]
         quantized_duration = min(
-            duration_candidates,
+            allowed_durations,
             key=lambda duration: (abs(duration - source_duration), -duration),
         )
         candidates.append(
