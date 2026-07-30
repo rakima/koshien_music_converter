@@ -92,8 +92,10 @@ class ConversionPipeline:
             )
             self._log(
                 "MIDIノート数: "
-                f"抽出={transcription.raw_note_count}, "
-                f"補正後={transcription.final_note_count}; "
+                f"元={transcription.raw_note_count}, "
+                f"同音統合後={transcription.merged_note_count}, "
+                f"短音削除後={transcription.cleaned_note_count}, "
+                f"最終={transcription.final_note_count}; "
                 "音域="
                 f"{config.arrangement.minimum_midi_note}"
                 f"〜{config.arrangement.maximum_midi_note}; "

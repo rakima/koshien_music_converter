@@ -11,11 +11,21 @@ from .errors import ConversionError, DependencyError
 @dataclass(frozen=True)
 class TranscriptionStats:
     raw_note_count: int
+    merged_note_count: int
+    cleaned_note_count: int
     final_note_count: int
     average_note_duration: float
     minimum_note_duration: float
     maximum_note_duration: float
     phrase_count: int
+
+
+@dataclass(frozen=True)
+class SimplificationStats:
+    raw_note_count: int
+    merged_note_count: int
+    cleaned_note_count: int
+    quantized_note_count: int
 
 
 def transcribe_melody(
@@ -60,7 +70,7 @@ def transcribe_melody(
         regions = extract_note_regions(
             frequencies, voiced, times, rms, minimum_duration=0.04
         )
-        simplified_regions = simplify_note_regions(
+        simplified_regions, simplification = process_note_regions(
             regions, bpm=bpm, settings=settings
         )
         articulated_regions = adjust_note_lengths(
@@ -96,6 +106,8 @@ def transcribe_melody(
         durations = [end - start for _pitch, start, end, _level in final_regions]
         return TranscriptionStats(
             raw_note_count=len(regions),
+            merged_note_count=simplification.merged_note_count,
+            cleaned_note_count=simplification.cleaned_note_count,
             final_note_count=len(final_regions),
             average_note_duration=sum(durations) / len(durations),
             minimum_note_duration=min(durations),
@@ -123,6 +135,18 @@ def simplify_note_regions(
     bpm: float,
     settings: ArrangementSettings,
 ) -> list[tuple[int, float, float, float]]:
+    simplified, _stats = process_note_regions(
+        regions, bpm=bpm, settings=settings
+    )
+    return simplified
+
+
+def process_note_regions(
+    regions: list[tuple[int, float, float, float]],
+    *,
+    bpm: float,
+    settings: ArrangementSettings,
+) -> tuple[list[tuple[int, float, float, float]], SimplificationStats]:
     """揺れの多い採譜結果を応援ラッパ向けの単純なノート列へする。"""
     normalized = [
         (
@@ -137,7 +161,13 @@ def simplify_note_regions(
     ]
     merged = merge_similar_notes(normalized, bpm=bpm, settings=settings)
     cleaned = remove_decorative_notes(merged, bpm=bpm, settings=settings)
-    return quantize_note_regions(cleaned, bpm=bpm, settings=settings)
+    quantized = quantize_note_regions(cleaned, bpm=bpm, settings=settings)
+    return quantized, SimplificationStats(
+        raw_note_count=len(regions),
+        merged_note_count=len(merged),
+        cleaned_note_count=len(cleaned),
+        quantized_note_count=len(quantized),
+    )
 
 
 def merge_similar_notes(
