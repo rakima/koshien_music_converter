@@ -117,7 +117,6 @@ def simplify_note_regions(
     settings: ArrangementSettings,
 ) -> list[tuple[int, float, float, float]]:
     """揺れの多い採譜結果を応援ラッパ向けの単純なノート列へする。"""
-    grid = 60 / bpm / settings.quantize_subdivision
     normalized = [
         (
             normalize_midi_pitch(
@@ -131,24 +130,7 @@ def simplify_note_regions(
     ]
     merged = merge_similar_notes(normalized, bpm=bpm, settings=settings)
     cleaned = remove_decorative_notes(merged, bpm=bpm, settings=settings)
-    simplified: list[tuple[int, float, float, float]] = []
-
-    for pitch, start, end, level in cleaned:
-        quantized_start = round(start / grid) * grid
-        quantized_duration = max(grid, round((end - start) / grid) * grid)
-        quantized_end = quantized_start + quantized_duration
-
-        if simplified:
-            _previous_pitch, _previous_start, previous_end, _previous_level = (
-                simplified[-1]
-            )
-            if quantized_start < previous_end:
-                quantized_start = previous_end
-                quantized_end = max(quantized_end, quantized_start + grid)
-
-        simplified.append((pitch, quantized_start, quantized_end, level))
-
-    return simplified
+    return quantize_note_regions(cleaned, bpm=bpm, settings=settings)
 
 
 def merge_similar_notes(
@@ -251,6 +233,68 @@ def remove_decorative_notes(
         reduced.append(current)
         index += 1
     return reduced
+
+
+def quantize_note_regions(
+    notes: list[tuple[int, float, float, float]],
+    *,
+    bpm: float,
+    settings: ArrangementSettings,
+) -> list[tuple[int, float, float, float]]:
+    """8分・4分音符を中心に、短いフレーズだけ16分音符を許可する。"""
+    beat = 60 / bpm
+    eighth = beat / settings.quantize_subdivision
+    sixteenth = beat / 4
+    duration_candidates = [eighth, beat, beat * 2, beat * 3]
+    if settings.allow_sixteenth_notes:
+        duration_candidates.insert(0, sixteenth)
+
+    candidates: list[tuple[int, float, float, float]] = []
+    for pitch, start, end, level in notes:
+        source_duration = end - start
+        use_sixteenth_grid = (
+            settings.allow_sixteenth_notes and source_duration < eighth * 0.75
+        )
+        start_grid = sixteenth if use_sixteenth_grid else eighth
+        quantized_start = round(start / start_grid) * start_grid
+        quantized_duration = min(
+            duration_candidates,
+            key=lambda duration: (abs(duration - source_duration), -duration),
+        )
+        candidates.append(
+            (
+                pitch,
+                quantized_start,
+                quantized_start + quantized_duration,
+                level,
+            )
+        )
+
+    density_limited: list[tuple[int, float, float, float]] = []
+    for note in candidates:
+        recent_starts = [
+            existing[1]
+            for existing in density_limited
+            if note[1] - beat < existing[1] <= note[1]
+        ]
+        if len(recent_starts) >= settings.maximum_notes_per_beat:
+            continue
+        density_limited.append(note)
+
+    monophonic: list[tuple[int, float, float, float]] = []
+    for note in density_limited:
+        pitch, start, end, level = note
+        if monophonic and start < monophonic[-1][2]:
+            previous = monophonic[-1]
+            if start <= previous[1]:
+                if level > previous[3]:
+                    monophonic[-1] = note
+                continue
+            monophonic[-1] = (
+                previous[0], previous[1], start, previous[3]
+            )
+        monophonic.append((pitch, start, end, level))
+    return monophonic
 
 
 def adjust_note_lengths(

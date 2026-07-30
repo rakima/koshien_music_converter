@@ -16,6 +16,8 @@ class ArrangementSettings:
     generated_drum_volume: float = 1.1
     minimum_note_duration: float = 0.10
     quantize_subdivision: int = 2
+    allow_sixteenth_notes: bool = True
+    maximum_notes_per_beat: int = 2
     same_note_pitch_tolerance: int = 1
     same_note_merge_max_gap_beats: float = 0.35
     maximum_merged_note_beats: float = 3.0
@@ -43,6 +45,8 @@ class ArrangementSettings:
             raise ConversionError("最小ノート長は0より大きくしてください。")
         if self.quantize_subdivision not in (2, 4):
             raise ConversionError("量子化単位は8分音符（2）または16分音符（4）です。")
+        if self.maximum_notes_per_beat <= 0:
+            raise ConversionError("1拍あたりの最大ノート数は1以上にしてください。")
         if not 0 <= self.same_note_pitch_tolerance <= 12:
             raise ConversionError("同音判定の音高差は0〜12にしてください。")
         if self.same_note_merge_max_gap_beats < 0:

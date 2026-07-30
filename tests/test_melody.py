@@ -6,6 +6,7 @@ from koshien_music_converter.melody import (
     extract_note_regions,
     merge_similar_notes,
     normalize_midi_pitch,
+    quantize_note_regions,
     remove_decorative_notes,
     simplify_note_regions,
 )
@@ -168,3 +169,36 @@ def test_merge_similar_notes_keeps_deliberate_repetition() -> None:
         (72, 0.0, 0.4, 0.8),
         (72, 0.7, 0.9, 0.7),
     ]
+
+
+def test_quantize_uses_sixteenth_only_for_short_phrase() -> None:
+    settings = ArrangementSettings(
+        allow_sixteenth_notes=True,
+        maximum_notes_per_beat=4,
+    )
+
+    quantized = quantize_note_regions(
+        [(72, 0.13, 0.26, 0.8), (74, 0.51, 0.89, 0.9)],
+        bpm=120,
+        settings=settings,
+    )
+
+    assert quantized[0][1:] == pytest.approx((0.125, 0.25, 0.8))
+    assert quantized[1][1:] == pytest.approx((0.5, 1.0, 0.9))
+
+
+def test_quantize_limits_notes_per_beat() -> None:
+    quantized = quantize_note_regions(
+        [
+            (72, 0.00, 0.13, 0.8),
+            (74, 0.13, 0.26, 0.8),
+            (76, 0.26, 0.39, 0.8),
+        ],
+        bpm=120,
+        settings=ArrangementSettings(
+            allow_sixteenth_notes=True,
+            maximum_notes_per_beat=2,
+        ),
+    )
+
+    assert len(quantized) == 2

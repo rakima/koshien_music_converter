@@ -73,3 +73,8 @@ def test_arrangement_rejects_invalid_same_note_tolerance() -> None:
     with pytest.raises(ConversionError, match="同音判定"):
         ArrangementSettings(same_note_pitch_tolerance=13).validate()
 
+
+def test_arrangement_rejects_zero_note_density() -> None:
+    with pytest.raises(ConversionError, match="最大ノート数"):
+        ArrangementSettings(maximum_notes_per_beat=0).validate()
+
