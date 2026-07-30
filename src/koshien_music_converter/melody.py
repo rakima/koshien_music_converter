@@ -130,11 +130,10 @@ def simplify_note_regions(
         for pitch, start, end, level in regions
     ]
     merged = merge_similar_notes(normalized, bpm=bpm, settings=settings)
+    cleaned = remove_decorative_notes(merged, bpm=bpm, settings=settings)
     simplified: list[tuple[int, float, float, float]] = []
 
-    for pitch, start, end, level in merged:
-        if end - start < settings.minimum_note_duration:
-            continue
+    for pitch, start, end, level in cleaned:
         quantized_start = round(start / grid) * grid
         quantized_duration = max(grid, round((end - start) / grid) * grid)
         quantized_end = quantized_start + quantized_duration
@@ -149,7 +148,7 @@ def simplify_note_regions(
 
         simplified.append((pitch, quantized_start, quantized_end, level))
 
-    return remove_ornamental_turns(simplified, grid=grid)
+    return simplified
 
 
 def merge_similar_notes(
@@ -185,36 +184,71 @@ def merge_similar_notes(
     return merged
 
 
-def remove_ornamental_turns(
+def remove_decorative_notes(
     notes: list[tuple[int, float, float, float]],
     *,
-    grid: float,
+    bpm: float,
+    settings: ArrangementSettings,
 ) -> list[tuple[int, float, float, float]]:
-    """元の音へすぐ戻る短い装飾音を取り除く。"""
+    """短音を前後関係から吸収し、孤立した装飾音だけを削除する。"""
+    working = list(notes)
     reduced: list[tuple[int, float, float, float]] = []
     index = 0
-    while index < len(notes):
-        if index + 2 < len(notes):
-            first = notes[index]
-            ornament = notes[index + 1]
-            returning = notes[index + 2]
-            ornament_duration = ornament[2] - ornament[1]
+    ornament_limit = 60 / bpm * settings.ornament_max_duration_beats
+
+    while index < len(working):
+        current = working[index]
+        following = working[index + 1] if index + 1 < len(working) else None
+        previous = reduced[-1] if reduced else None
+        duration = current[2] - current[1]
+        returns_to_previous = (
+            previous is not None
+            and following is not None
+            and abs(previous[0] - following[0])
+            <= settings.same_note_pitch_tolerance
+            and abs(previous[0] - current[0])
+            > settings.same_note_pitch_tolerance
+            and duration <= ornament_limit
+        )
+
+        if returns_to_previous:
+            assert previous is not None and following is not None
+            reduced[-1] = (
+                previous[0],
+                previous[1],
+                following[2],
+                max(previous[3], following[3]),
+            )
+            index += 2
+            continue
+
+        if duration < settings.minimum_note_duration:
             if (
-                ornament_duration <= grid
-                and abs(first[0] - returning[0]) <= 1
-                and abs(first[0] - ornament[0]) >= 2
+                previous is not None
+                and abs(previous[0] - current[0])
+                <= settings.same_note_pitch_tolerance
             ):
-                reduced.append(
-                    (
-                        first[0],
-                        first[1],
-                        returning[2],
-                        max(first[3], returning[3]),
-                    )
+                reduced[-1] = (
+                    previous[0],
+                    previous[1],
+                    current[2],
+                    max(previous[3], current[3]),
                 )
-                index += 3
-                continue
-        reduced.append(notes[index])
+            elif (
+                following is not None
+                and abs(following[0] - current[0])
+                <= settings.same_note_pitch_tolerance
+            ):
+                working[index + 1] = (
+                    following[0],
+                    current[1],
+                    following[2],
+                    max(current[3], following[3]),
+                )
+            index += 1
+            continue
+
+        reduced.append(current)
         index += 1
     return reduced
 

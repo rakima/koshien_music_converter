@@ -6,7 +6,7 @@ from koshien_music_converter.melody import (
     extract_note_regions,
     merge_similar_notes,
     normalize_midi_pitch,
-    remove_ornamental_turns,
+    remove_decorative_notes,
     simplify_note_regions,
 )
 
@@ -97,11 +97,35 @@ def test_remove_short_returning_ornament() -> None:
         (79, 0.75, 1.0, 0.7),
     ]
 
-    reduced = remove_ornamental_turns(notes, grid=0.25)
+    reduced = remove_decorative_notes(
+        notes,
+        bpm=120,
+        settings=ArrangementSettings(ornament_max_duration_beats=0.5),
+    )
 
     assert reduced == [
         (72, 0.0, 0.75, 0.9),
         (79, 0.75, 1.0, 0.7),
+    ]
+
+
+def test_short_note_is_absorbed_into_close_following_note() -> None:
+    reduced = remove_decorative_notes(
+        [
+            (72, 0.0, 0.08, 0.4),
+            (73, 0.08, 0.4, 0.8),
+            (79, 0.5, 0.8, 0.7),
+        ],
+        bpm=120,
+        settings=ArrangementSettings(
+            minimum_note_duration=0.1,
+            same_note_pitch_tolerance=1,
+        ),
+    )
+
+    assert reduced == [
+        (73, 0.0, 0.4, 0.8),
+        (79, 0.5, 0.8, 0.7),
     ]
 
 
