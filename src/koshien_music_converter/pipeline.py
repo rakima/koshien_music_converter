@@ -9,6 +9,7 @@ from .commands import require_command, run_command
 from .config import ConversionConfig
 from .errors import ConversionError
 from .melody import transcribe_melody
+from .mixing import build_mastering_filter
 
 ProgressCallback = Callable[[int, str], None]
 
@@ -114,6 +115,14 @@ class ConversionPipeline:
             )
 
             self._notify(90, "ブラスと応援太鼓をミックスしています")
+            mastering_filter = build_mastering_filter(config.arrangement)
+            self._log(
+                "ミックス音量: "
+                f"ラッパ={config.arrangement.brass_volume:.2f}, "
+                f"太鼓={config.arrangement.generated_drum_volume:.2f}, "
+                f"目標={config.arrangement.target_loudness_lufs:.1f} LUFS, "
+                f"ピーク={config.arrangement.target_peak_dbfs:.1f} dBFS"
+            )
             run_command(
                 [
                     ffmpeg, "-y", "-hide_banner", "-loglevel", "warning",
@@ -123,7 +132,7 @@ class ConversionPipeline:
                     "[0:a]volume=1.15[b];[1:a]volume=1.0[d];"
                     "[2:a]volume=0.38[bs];"
                     "[b][d][bs]amix=inputs=3:duration=longest:normalize=0,"
-                    "aecho=0.8:0.25:55:0.12,alimiter=limit=0.95[out]",
+                    f"aecho=0.8:0.25:55:0.12,{mastering_filter}[out]",
                     "-map", "[out]", "-t", str(config.duration),
                     "-codec:a", "libmp3lame", "-q:a", "2",
                     str(config.output_path),
