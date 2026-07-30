@@ -1,8 +1,13 @@
 import pytest
 
 from koshien_music_converter.config import ArrangementSettings
-from koshien_music_converter.melody import extract_note_regions, normalize_midi_pitch
-from koshien_music_converter.melody import simplify_note_regions
+from koshien_music_converter.melody import (
+    articulate_note_regions,
+    extract_note_regions,
+    normalize_midi_pitch,
+    remove_ornamental_turns,
+    simplify_note_regions,
+)
 
 
 def test_extract_note_regions_groups_equal_pitch() -> None:
@@ -67,3 +72,50 @@ def test_simplified_notes_use_eighth_note_grid() -> None:
     _pitch, start, end, _level = simplified[0]
     assert start == pytest.approx(0.25)
     assert end - start == pytest.approx(0.5)
+
+
+def test_articulate_notes_adds_gap_and_caps_long_notes() -> None:
+    settings = ArrangementSettings(note_gate_ratio=0.6, maximum_note_beats=1)
+
+    articulated = articulate_note_regions(
+        [(72, 0.0, 2.0, 1.0), (74, 2.0, 2.25, 0.8)],
+        bpm=120,
+        settings=settings,
+    )
+
+    assert articulated[0][2] == pytest.approx(0.3)
+    assert articulated[1][2] == pytest.approx(2.15)
+    assert articulated[0][2] < articulated[1][1]
+
+
+def test_remove_short_returning_ornament() -> None:
+    notes = [
+        (72, 0.0, 0.25, 0.8),
+        (76, 0.25, 0.5, 0.5),
+        (72, 0.5, 0.75, 0.9),
+        (79, 0.75, 1.0, 0.7),
+    ]
+
+    reduced = remove_ornamental_turns(notes, grid=0.25)
+
+    assert reduced == [
+        (72, 0.0, 0.75, 0.9),
+        (79, 0.75, 1.0, 0.7),
+    ]
+
+
+def test_simplified_notes_are_monophonic() -> None:
+    simplified = simplify_note_regions(
+        [
+            (72, 0.0, 0.6, 0.8),
+            (76, 0.4, 0.8, 0.7),
+            (79, 0.7, 1.0, 0.9),
+        ],
+        bpm=120,
+        settings=ArrangementSettings(),
+    )
+
+    assert all(
+        current[2] <= following[1]
+        for current, following in zip(simplified, simplified[1:], strict=False)
+    )

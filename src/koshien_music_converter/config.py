@@ -14,11 +14,16 @@ class ArrangementSettings:
     maximum_midi_note: int = 84
     brass_volume: float = 1.15
     generated_drum_volume: float = 1.1
-    original_drum_volume: float = 0.25
-    accompaniment_volume: float = 0.20
-    vocal_volume: float = 0.05
     minimum_note_duration: float = 0.12
     quantize_subdivision: int = 2
+    note_gate_ratio: float = 0.62
+    maximum_note_beats: float = 1.0
+    brass_attack_controller: int = 20
+    brass_release_controller: int = 20
+    minimum_brass_velocity: int = 96
+    brass_presence_db: float = 4.0
+    brass_brightness_db: float = 3.0
+    drum_body_db: float = 5.0
     target_loudness_lufs: float = -14.0
     target_peak_dbfs: float = -1.0
     loudness_range: float = 9.0
@@ -34,14 +39,29 @@ class ArrangementSettings:
             raise ConversionError("最小ノート長は0より大きくしてください。")
         if self.quantize_subdivision not in (2, 4):
             raise ConversionError("量子化単位は8分音符（2）または16分音符（4）です。")
+        if not 0 < self.note_gate_ratio <= 1:
+            raise ConversionError("ノートゲート比率は0より大きく1以下にしてください。")
+        if self.maximum_note_beats <= 0:
+            raise ConversionError("最大ノート拍数は0より大きくしてください。")
+        for controller in (
+            self.brass_attack_controller,
+            self.brass_release_controller,
+            self.minimum_brass_velocity,
+        ):
+            if not 0 <= controller <= 127:
+                raise ConversionError("MIDIコントローラー値は0〜127にしてください。")
+        for name, value in (
+            ("ラッパ中域補正", self.brass_presence_db),
+            ("ラッパ高域補正", self.brass_brightness_db),
+            ("太鼓低域補正", self.drum_body_db),
+        ):
+            if not -12 <= value <= 12:
+                raise ConversionError(f"{name}は-12〜12 dBで指定してください。")
         if self.target_peak_dbfs > 0:
             raise ConversionError("出力ピークは0 dBFS以下にしてください。")
         for name, value in (
             ("ラッパ音量", self.brass_volume),
             ("生成太鼓音量", self.generated_drum_volume),
-            ("原曲ドラム音量", self.original_drum_volume),
-            ("伴奏音量", self.accompaniment_volume),
-            ("ボーカル音量", self.vocal_volume),
         ):
             if value < 0:
                 raise ConversionError(f"{name}は0以上にしてください。")

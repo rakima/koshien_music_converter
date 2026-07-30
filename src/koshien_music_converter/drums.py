@@ -37,22 +37,25 @@ def estimate_bpm(source: Path) -> float:
 
 
 def build_cheer_pattern(duration: float, bpm: float) -> list[DrumEvent]:
-    """4拍の固定応援パターンをイベント列にする。"""
+    """「ドン ドン ドドン ドン」の固定応援パターンをイベント列にする。"""
     beat_duration = 60 / bpm
     events: list[DrumEvent] = []
-    beat_index = 0
-    while (time := beat_index * beat_duration) < duration:
-        beat_in_bar = beat_index % 4
-        events.append(
-            DrumEvent(time, "kick" if beat_in_bar in (0, 2) else "clap")
-        )
-        if beat_index % 8 == 0:
-            events.append(DrumEvent(time, "cymbal"))
-        if beat_in_bar == 3:
-            follow_up = time + beat_duration / 2
-            if follow_up < duration:
-                events.append(DrumEvent(follow_up, "kick"))
-        beat_index += 1
+    bar_duration = beat_duration * 4
+    bar_index = 0
+    while (bar_start := bar_index * bar_duration) < duration:
+        for beat_offset, kind in (
+            (0.0, "odaiko_accent"),
+            (1.0, "odaiko"),
+            (2.0, "odaiko_accent"),
+            (2.5, "odaiko"),
+            (3.0, "odaiko"),
+        ):
+            event_time = bar_start + beat_offset * beat_duration
+            if event_time < duration:
+                events.append(DrumEvent(event_time, kind))
+        if bar_index % 2 == 0:
+            events.append(DrumEvent(bar_start, "cymbal"))
+        bar_index += 1
     return events
 
 
@@ -77,10 +80,10 @@ def generate_cheer_drums(
 
     for event in events:
         start = round(event.time * sample_rate)
-        if event.kind == "kick":
-            sound = _kick_sound(sample_rate, np)
-        elif event.kind == "clap":
-            sound = _clap_sound(sample_rate, np, random)
+        if event.kind == "odaiko_accent":
+            sound = _odaiko_sound(sample_rate, np, accent=True)
+        elif event.kind == "odaiko":
+            sound = _odaiko_sound(sample_rate, np, accent=False)
         else:
             sound = _cymbal_sound(sample_rate, np, random)
         end = min(audio.size, start + sound.size)
@@ -95,23 +98,16 @@ def generate_cheer_drums(
     return len(events)
 
 
-def _kick_sound(sample_rate: int, np: object) -> object:
-    duration = 0.32
+def _odaiko_sound(sample_rate: int, np: object, *, accent: bool) -> object:
+    duration = 0.28
     time = np.arange(round(sample_rate * duration)) / sample_rate
-    frequency = 48 + 62 * np.exp(-time * 22)
+    frequency = 52 + 68 * np.exp(-time * 25)
     phase = 2 * np.pi * np.cumsum(frequency) / sample_rate
-    body = np.sin(phase) * np.exp(-time * 10)
-    attack = np.exp(-time * 70) * 0.35
-    return (body + attack).astype(np.float32)
-
-
-def _clap_sound(sample_rate: int, np: object, random: object) -> object:
-    duration = 0.16
-    time = np.arange(round(sample_rate * duration)) / sample_rate
-    noise = random.standard_normal(time.size)
-    bright_noise = noise - np.roll(noise, 1)
-    envelope = np.exp(-time * 28) * (0.75 + 0.25 * np.sin(2 * np.pi * 32 * time))
-    return (bright_noise * envelope * 0.28).astype(np.float32)
+    body = np.sin(phase) * np.exp(-time * 13)
+    overtone = np.sin(phase * 1.97) * np.exp(-time * 20) * 0.22
+    attack = np.exp(-time * 95) * 0.48
+    gain = 1.0 if accent else 0.78
+    return ((body + overtone + attack) * gain).astype(np.float32)
 
 
 def _cymbal_sound(sample_rate: int, np: object, random: object) -> object:

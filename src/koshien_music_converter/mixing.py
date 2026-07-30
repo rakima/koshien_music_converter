@@ -28,19 +28,21 @@ def target_peak_linear(settings: ArrangementSettings) -> float:
 
 
 def build_mix_filter(settings: ArrangementSettings) -> str:
-    """各ステムを設定された比率でまとめ、最後にマスタリングする。"""
+    """生成したラッパと太鼓だけをまとめ、最後にマスタリングする。"""
     mastering = build_mastering_filter(settings)
     return (
-        f"[0:a]volume={settings.brass_volume}[brass];"
-        f"[1:a]volume={settings.generated_drum_volume}[drums];"
-        f"[2:a]volume={settings.original_drum_volume}[original_drums];"
-        "[3:a][4:a]amix=inputs=2:normalize=0[accompaniment_raw];"
-        f"[accompaniment_raw]volume={settings.accompaniment_volume}"
-        "[accompaniment];"
-        f"[5:a]volume={settings.vocal_volume}[vocals];"
-        "[brass][drums][original_drums][accompaniment][vocals]"
-        "amix=inputs=5:duration=longest:normalize=0,"
-        f"aecho=0.8:0.25:55:0.12,{mastering}[out]"
+        "[0:a]highpass=f=160,"
+        f"equalizer=f=2500:t=q:w=1:g={settings.brass_presence_db},"
+        f"equalizer=f=4500:t=q:w=1:g={settings.brass_brightness_db},"
+        "acompressor=threshold=-24dB:ratio=3:attack=8:release=45:makeup=2,"
+        f"volume={settings.brass_volume}[brass];"
+        "[1:a]"
+        f"equalizer=f=90:t=q:w=1:g={settings.drum_body_db},"
+        "equalizer=f=2400:t=q:w=1:g=2,"
+        "acompressor=threshold=-20dB:ratio=4:attack=3:release=55:makeup=1.5,"
+        f"volume={settings.generated_drum_volume}[drums];"
+        "[brass][drums]amix=inputs=2:duration=longest:normalize=0,"
+        f"{mastering}[out]"
     )
 
 

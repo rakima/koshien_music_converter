@@ -32,19 +32,19 @@ def test_mix_filter_uses_configured_part_volumes() -> None:
     settings = ArrangementSettings(
         brass_volume=1.2,
         generated_drum_volume=1.1,
-        original_drum_volume=0.2,
-        accompaniment_volume=0.15,
-        vocal_volume=0,
     )
 
     audio_filter = build_mix_filter(settings)
 
-    assert "[0:a]volume=1.2[brass]" in audio_filter
-    assert "[1:a]volume=1.1[drums]" in audio_filter
-    assert "[2:a]volume=0.2[original_drums]" in audio_filter
-    assert "[accompaniment_raw]volume=0.15[accompaniment]" in audio_filter
-    assert "[5:a]volume=0[vocals]" in audio_filter
-    assert "amix=inputs=5" in audio_filter
+    assert "equalizer=f=2500:t=q:w=1:g=4.0" in audio_filter
+    assert "volume=1.2[brass]" in audio_filter
+    assert "equalizer=f=90:t=q:w=1:g=5.0" in audio_filter
+    assert "volume=1.1[drums]" in audio_filter
+    assert "amix=inputs=2" in audio_filter
+    assert "aecho" not in audio_filter
+    assert "original" not in audio_filter
+    assert "accompaniment" not in audio_filter
+    assert "vocals" not in audio_filter
 
 
 def test_parse_max_volume() -> None:

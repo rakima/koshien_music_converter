@@ -96,7 +96,10 @@ class ConversionPipeline:
                 f"補正後={transcription.final_note_count}; "
                 "音域="
                 f"{config.arrangement.minimum_midi_note}"
-                f"〜{config.arrangement.maximum_midi_note}"
+                f"〜{config.arrangement.maximum_midi_note}; "
+                f"平均長={transcription.average_note_duration:.2f}秒, "
+                f"最大長={transcription.maximum_note_duration:.2f}秒, "
+                "同時発音数=1"
             )
             brass = work / "brass.wav"
             self._notify(72, "主旋律をトランペット音へ変換しています")
@@ -111,37 +114,23 @@ class ConversionPipeline:
                     "FluidSynthは正常終了しましたが、ブラス音声を生成できませんでした。"
                 )
 
-            original_taiko = work / "original_taiko.wav"
-            self._notify(82, "ドラムを応援太鼓風に加工しています")
-            run_command(
-                [
-                    ffmpeg, "-y", "-hide_banner", "-loglevel", "warning",
-                    "-i", str(stems / "drums.wav"),
-                    "-af",
-                    "volume=0.4,highpass=f=45,lowpass=f=4800,"
-                    "bass=g=10:f=110:w=0.7,"
-                    "acompressor=threshold=-20dB:ratio=5:attack=3:release=100,"
-                    "volume=1.35,alimiter=limit=0.95",
-                    str(original_taiko),
-                ],
-                self._log,
-            )
-
+            self._notify(82, "応援団専用の太鼓を生成しています")
             cheer_drums = work / "cheer_drums.wav"
             drum_events = generate_cheer_drums(
                 cheer_drums, config.duration, bpm
             )
-            self._log(f"応援太鼓: BPM={bpm:.1f}, イベント数={drum_events}")
+            self._log(
+                f"応援太鼓: BPM={bpm:.1f}, "
+                f"パターン=ドン ドン ドドン ドン, イベント数={drum_events}"
+            )
 
             self._notify(90, "ブラスと応援太鼓をミックスしています")
             mix_filter = build_mix_filter(config.arrangement)
             self._log(
                 "ミックス音量: "
+                "構成=生成ラッパ+生成太鼓（原曲音声0%）, "
                 f"ラッパ={config.arrangement.brass_volume:.2f}, "
                 f"生成太鼓={config.arrangement.generated_drum_volume:.2f}, "
-                f"原曲ドラム={config.arrangement.original_drum_volume:.2f}, "
-                f"伴奏={config.arrangement.accompaniment_volume:.2f}, "
-                f"ボーカル={config.arrangement.vocal_volume:.2f}; "
                 f"目標={config.arrangement.target_loudness_lufs:.1f} LUFS, "
                 f"ピーク={config.arrangement.target_peak_dbfs:.1f} dBFS"
             )
@@ -149,9 +138,6 @@ class ConversionPipeline:
                 [
                     ffmpeg, "-y", "-hide_banner", "-loglevel", "warning",
                     "-i", str(brass), "-i", str(cheer_drums),
-                    "-i", str(original_taiko), "-i", str(stems / "other.wav"),
-                    "-i", str(stems / "bass.wav"),
-                    "-i", str(stems / "vocals.wav"),
                     "-filter_complex", mix_filter,
                     "-map", "[out]", "-t", str(config.duration),
                     "-codec:a", "libmp3lame", "-q:a", "2",
