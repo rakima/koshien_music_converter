@@ -12,6 +12,8 @@ from .errors import ConversionError, DependencyError
 class TranscriptionStats:
     raw_note_count: int
     final_note_count: int
+    average_note_duration: float
+    maximum_note_duration: float
 
 
 def transcribe_melody(
@@ -86,7 +88,13 @@ def transcribe_melody(
             raise ConversionError("主旋律として扱える音程を検出できませんでした。")
         midi.instruments.append(trumpet)
         midi.write(str(destination))
-        return TranscriptionStats(len(regions), len(articulated_regions))
+        durations = [end - start for _pitch, start, end, _level in articulated_regions]
+        return TranscriptionStats(
+            raw_note_count=len(regions),
+            final_note_count=len(articulated_regions),
+            average_note_duration=sum(durations) / len(durations),
+            maximum_note_duration=max(durations),
+        )
     except ConversionError:
         raise
     except Exception as exc:

@@ -96,7 +96,10 @@ class ConversionPipeline:
                 f"補正後={transcription.final_note_count}; "
                 "音域="
                 f"{config.arrangement.minimum_midi_note}"
-                f"〜{config.arrangement.maximum_midi_note}"
+                f"〜{config.arrangement.maximum_midi_note}; "
+                f"平均長={transcription.average_note_duration:.2f}秒, "
+                f"最大長={transcription.maximum_note_duration:.2f}秒, "
+                "同時発音数=1"
             )
             brass = work / "brass.wav"
             self._notify(72, "主旋律をトランペット音へ変換しています")
@@ -125,6 +128,7 @@ class ConversionPipeline:
             mix_filter = build_mix_filter(config.arrangement)
             self._log(
                 "ミックス音量: "
+                "構成=生成ラッパ+生成太鼓（原曲音声0%）, "
                 f"ラッパ={config.arrangement.brass_volume:.2f}, "
                 f"生成太鼓={config.arrangement.generated_drum_volume:.2f}, "
                 f"目標={config.arrangement.target_loudness_lufs:.1f} LUFS, "
