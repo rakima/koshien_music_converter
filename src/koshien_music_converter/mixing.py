@@ -19,7 +19,7 @@ def build_mastering_filter(settings: ArrangementSettings) -> str:
         f"I={settings.target_loudness_lufs}:"
         f"LRA={settings.loudness_range}:"
         f"TP={settings.target_peak_dbfs},"
-        f"alimiter=limit={limiter_linear:.6f}"
+        f"alimiter=limit={limiter_linear:.6f}:level=false"
     )
 
 
@@ -50,3 +50,12 @@ def parse_max_volume(lines: list[str]) -> float | None:
         if match:
             return float(match.group(1))
     return None
+
+
+def peak_is_within_ceiling(
+    measured_dbfs: float,
+    target_dbfs: float,
+    *,
+    tolerance_db: float = 0.5,
+) -> bool:
+    return measured_dbfs <= target_dbfs + tolerance_db

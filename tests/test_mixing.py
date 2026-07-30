@@ -5,6 +5,7 @@ from koshien_music_converter.mixing import (
     build_mix_filter,
     build_mastering_filter,
     parse_max_volume,
+    peak_is_within_ceiling,
     target_peak_linear,
 )
 
@@ -20,7 +21,7 @@ def test_mastering_filter_contains_loudness_compression_and_limiter() -> None:
 
     assert "acompressor=threshold=-20dB" in audio_filter
     assert "loudnorm=I=-13:LRA=9.0:TP=-1" in audio_filter
-    assert "alimiter=limit=0.891251" in audio_filter
+    assert "alimiter=limit=0.891251:level=false" in audio_filter
 
 
 def test_target_peak_is_minus_one_dbfs() -> None:
@@ -53,3 +54,8 @@ def test_parse_max_volume() -> None:
     ]
 
     assert parse_max_volume(lines) == -1.0
+
+
+def test_peak_ceiling_allows_only_small_encoding_difference() -> None:
+    assert peak_is_within_ceiling(-0.9, -1.0)
+    assert not peak_is_within_ceiling(-0.4, -1.0)

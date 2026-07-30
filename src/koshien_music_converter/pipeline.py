@@ -10,7 +10,7 @@ from .config import ConversionConfig
 from .drums import estimate_bpm, generate_cheer_drums
 from .errors import ConversionError
 from .melody import transcribe_melody
-from .mixing import build_mix_filter, parse_max_volume
+from .mixing import build_mix_filter, parse_max_volume, peak_is_within_ceiling
 
 ProgressCallback = Callable[[int, str], None]
 
@@ -118,7 +118,7 @@ class ConversionPipeline:
                     ffmpeg, "-y", "-hide_banner", "-loglevel", "warning",
                     "-i", str(stems / "drums.wav"),
                     "-af",
-                    "highpass=f=45,lowpass=f=4800,"
+                    "volume=0.4,highpass=f=45,lowpass=f=4800,"
                     "bass=g=10:f=110:w=0.7,"
                     "acompressor=threshold=-20dB:ratio=5:attack=3:release=100,"
                     "volume=1.35,alimiter=limit=0.95",
@@ -194,6 +194,12 @@ class ConversionPipeline:
             raise ConversionError("最終出力のピークを確認できませんでした。")
         if max_volume <= -60:
             raise ConversionError("最終出力がほぼ無音です。")
+        if not peak_is_within_ceiling(
+            max_volume, config.arrangement.target_peak_dbfs
+        ):
+            raise ConversionError(
+                f"最終出力ピーク {max_volume:.1f} dBFS が目標を超えています。"
+            )
         self._log(
             f"最終出力ピーク: {max_volume:.1f} dBFS "
             f"(目標 {config.arrangement.target_peak_dbfs:.1f} dBFS)"
