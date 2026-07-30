@@ -36,9 +36,12 @@ def test_mix_filter_uses_configured_part_volumes() -> None:
 
     audio_filter = build_mix_filter(settings)
 
-    assert "[0:a]volume=1.2[brass]" in audio_filter
-    assert "[1:a]volume=1.1[drums]" in audio_filter
+    assert "equalizer=f=2500:t=q:w=1:g=4.0" in audio_filter
+    assert "volume=1.2[brass]" in audio_filter
+    assert "equalizer=f=90:t=q:w=1:g=5.0" in audio_filter
+    assert "volume=1.1[drums]" in audio_filter
     assert "amix=inputs=2" in audio_filter
+    assert "aecho" not in audio_filter
     assert "original" not in audio_filter
     assert "accompaniment" not in audio_filter
     assert "vocals" not in audio_filter

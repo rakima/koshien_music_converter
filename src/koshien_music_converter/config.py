@@ -21,6 +21,9 @@ class ArrangementSettings:
     brass_attack_controller: int = 20
     brass_release_controller: int = 20
     minimum_brass_velocity: int = 96
+    brass_presence_db: float = 4.0
+    brass_brightness_db: float = 3.0
+    drum_body_db: float = 5.0
     target_loudness_lufs: float = -14.0
     target_peak_dbfs: float = -1.0
     loudness_range: float = 9.0
@@ -47,6 +50,13 @@ class ArrangementSettings:
         ):
             if not 0 <= controller <= 127:
                 raise ConversionError("MIDIコントローラー値は0〜127にしてください。")
+        for name, value in (
+            ("ラッパ中域補正", self.brass_presence_db),
+            ("ラッパ高域補正", self.brass_brightness_db),
+            ("太鼓低域補正", self.drum_body_db),
+        ):
+            if not -12 <= value <= 12:
+                raise ConversionError(f"{name}は-12〜12 dBで指定してください。")
         if self.target_peak_dbfs > 0:
             raise ConversionError("出力ピークは0 dBFS以下にしてください。")
         for name, value in (

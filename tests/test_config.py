@@ -63,3 +63,8 @@ def test_arrangement_rejects_invalid_note_gate() -> None:
     with pytest.raises(ConversionError, match="ゲート比率"):
         ArrangementSettings(note_gate_ratio=0).validate()
 
+
+def test_arrangement_rejects_excessive_tone_boost() -> None:
+    with pytest.raises(ConversionError, match="ラッパ中域"):
+        ArrangementSettings(brass_presence_db=13).validate()
+

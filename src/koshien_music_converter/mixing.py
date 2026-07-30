@@ -31,10 +31,18 @@ def build_mix_filter(settings: ArrangementSettings) -> str:
     """生成したラッパと太鼓だけをまとめ、最後にマスタリングする。"""
     mastering = build_mastering_filter(settings)
     return (
-        f"[0:a]volume={settings.brass_volume}[brass];"
-        f"[1:a]volume={settings.generated_drum_volume}[drums];"
+        "[0:a]highpass=f=160,"
+        f"equalizer=f=2500:t=q:w=1:g={settings.brass_presence_db},"
+        f"equalizer=f=4500:t=q:w=1:g={settings.brass_brightness_db},"
+        "acompressor=threshold=-24dB:ratio=3:attack=8:release=45:makeup=2,"
+        f"volume={settings.brass_volume}[brass];"
+        "[1:a]"
+        f"equalizer=f=90:t=q:w=1:g={settings.drum_body_db},"
+        "equalizer=f=2400:t=q:w=1:g=2,"
+        "acompressor=threshold=-20dB:ratio=4:attack=3:release=55:makeup=1.5,"
+        f"volume={settings.generated_drum_volume}[drums];"
         "[brass][drums]amix=inputs=2:duration=longest:normalize=0,"
-        f"aecho=0.8:0.25:55:0.12,{mastering}[out]"
+        f"{mastering}[out]"
     )
 
 
