@@ -20,8 +20,8 @@ class ArrangementSettings:
     same_note_merge_max_gap_beats: float = 0.35
     maximum_merged_note_beats: float = 3.0
     ornament_max_duration_beats: float = 0.5
-    note_gate_ratio: float = 0.62
-    maximum_note_beats: float = 1.0
+    note_shortening_ratio: float = 0.88
+    maximum_note_beats: float = 3.0
     brass_attack_controller: int = 20
     brass_release_controller: int = 20
     minimum_brass_velocity: int = 96
@@ -51,8 +51,8 @@ class ArrangementSettings:
             raise ConversionError("統合後の最大ノート長は0より大きくしてください。")
         if self.ornament_max_duration_beats <= 0:
             raise ConversionError("装飾音の最大拍数は0より大きくしてください。")
-        if not 0 < self.note_gate_ratio <= 1:
-            raise ConversionError("ノートゲート比率は0より大きく1以下にしてください。")
+        if not 0 < self.note_shortening_ratio <= 1:
+            raise ConversionError("ノート短縮率は0より大きく1以下にしてください。")
         if self.maximum_note_beats <= 0:
             raise ConversionError("最大ノート拍数は0より大きくしてください。")
         for controller in (

@@ -61,7 +61,7 @@ def transcribe_melody(
         simplified_regions = simplify_note_regions(
             regions, bpm=bpm, settings=settings
         )
-        articulated_regions = articulate_note_regions(
+        articulated_regions = adjust_note_lengths(
             simplified_regions, bpm=bpm, settings=settings
         )
         trumpet.control_changes.extend(
@@ -253,22 +253,26 @@ def remove_decorative_notes(
     return reduced
 
 
-def articulate_note_regions(
+def adjust_note_lengths(
     regions: list[tuple[int, float, float, float]],
     *,
     bpm: float,
     settings: ArrangementSettings,
 ) -> list[tuple[int, float, float, float]]:
-    """各音の末尾に隙間を作り、短く明瞭な応援ラッパ奏法にする。"""
+    """元音価を残しながら、Release前に小さな発音間隔を作る。"""
     maximum_duration = 60 / bpm * settings.maximum_note_beats
-    articulated: list[tuple[int, float, float, float]] = []
+    adjusted: list[tuple[int, float, float, float]] = []
     for pitch, start, end, level in regions:
         source_duration = end - start
         played_duration = (
-            min(source_duration, maximum_duration) * settings.note_gate_ratio
+            min(source_duration, maximum_duration) * settings.note_shortening_ratio
         )
-        articulated.append((pitch, start, start + played_duration, level))
-    return articulated
+        played_duration = max(
+            min(source_duration, settings.minimum_note_duration),
+            played_duration,
+        )
+        adjusted.append((pitch, start, start + played_duration, level))
+    return adjusted
 
 
 def extract_note_regions(

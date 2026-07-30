@@ -60,8 +60,8 @@ def test_arrangement_rejects_invalid_midi_range() -> None:
 
 
 def test_arrangement_rejects_invalid_note_gate() -> None:
-    with pytest.raises(ConversionError, match="ゲート比率"):
-        ArrangementSettings(note_gate_ratio=0).validate()
+    with pytest.raises(ConversionError, match="ノート短縮率"):
+        ArrangementSettings(note_shortening_ratio=0).validate()
 
 
 def test_arrangement_rejects_excessive_tone_boost() -> None:

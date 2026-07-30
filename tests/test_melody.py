@@ -2,7 +2,7 @@ import pytest
 
 from koshien_music_converter.config import ArrangementSettings
 from koshien_music_converter.melody import (
-    articulate_note_regions,
+    adjust_note_lengths,
     extract_note_regions,
     merge_similar_notes,
     normalize_midi_pitch,
@@ -75,18 +75,22 @@ def test_simplified_notes_use_eighth_note_grid() -> None:
     assert end - start == pytest.approx(0.5)
 
 
-def test_articulate_notes_adds_gap_and_caps_long_notes() -> None:
-    settings = ArrangementSettings(note_gate_ratio=0.6, maximum_note_beats=1)
+def test_adjust_note_lengths_preserves_melody_and_caps_long_notes() -> None:
+    settings = ArrangementSettings(
+        note_shortening_ratio=0.9,
+        maximum_note_beats=2,
+        minimum_note_duration=0.1,
+    )
 
-    articulated = articulate_note_regions(
+    adjusted = adjust_note_lengths(
         [(72, 0.0, 2.0, 1.0), (74, 2.0, 2.25, 0.8)],
         bpm=120,
         settings=settings,
     )
 
-    assert articulated[0][2] == pytest.approx(0.3)
-    assert articulated[1][2] == pytest.approx(2.15)
-    assert articulated[0][2] < articulated[1][1]
+    assert adjusted[0][2] == pytest.approx(0.9)
+    assert adjusted[1][2] == pytest.approx(2.225)
+    assert adjusted[0][2] < adjusted[1][1]
 
 
 def test_remove_short_returning_ornament() -> None:
