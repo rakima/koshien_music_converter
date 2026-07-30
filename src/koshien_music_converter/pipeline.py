@@ -68,6 +68,8 @@ class ConversionPipeline:
             )
             stems = work / "separated" / "htdemucs" / clip.stem
             self._require_stems(stems)
+            bpm = estimate_bpm(stems / "drums.wav")
+            self._log(f"解析テンポ: {bpm:.1f} BPM")
 
             melody_source = work / "melody_source.wav"
             self._notify(52, "主旋律用の音声を作っています")
@@ -86,7 +88,7 @@ class ConversionPipeline:
             midi_path = work / "melody.mid"
             self._notify(60, "主旋律を採譜しています")
             transcription = transcribe_melody(
-                melody_source, midi_path, config.arrangement
+                melody_source, midi_path, config.arrangement, bpm
             )
             self._log(
                 "MIDIノート数: "
@@ -125,7 +127,6 @@ class ConversionPipeline:
                 self._log,
             )
 
-            bpm = estimate_bpm(stems / "drums.wav")
             cheer_drums = work / "cheer_drums.wav"
             drum_events = generate_cheer_drums(
                 cheer_drums, config.duration, bpm
