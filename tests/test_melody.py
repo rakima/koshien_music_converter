@@ -1,6 +1,6 @@
 import pytest
 
-from koshien_music_converter.melody import extract_note_regions
+from koshien_music_converter.melody import extract_note_regions, normalize_midi_pitch
 
 
 def test_extract_note_regions_groups_equal_pitch() -> None:
@@ -25,3 +25,13 @@ def test_extract_note_regions_discards_short_notes() -> None:
     )
 
     assert notes == []
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [(48, 60), (59, 71), (60, 60), (84, 84), (85, 73), (96, 84)],
+)
+def test_normalize_midi_pitch_uses_trumpet_range(
+    source: int, expected: int
+) -> None:
+    assert normalize_midi_pitch(source, minimum=60, maximum=84) == expected

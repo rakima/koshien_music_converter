@@ -1,12 +1,24 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 from pathlib import Path
 
+from .config import ArrangementSettings
 from .errors import ConversionError, DependencyError
 
 
-def transcribe_melody(source: Path, destination: Path) -> None:
+@dataclass(frozen=True)
+class TranscriptionStats:
+    raw_note_count: int
+    final_note_count: int
+
+
+def transcribe_melody(
+    source: Path,
+    destination: Path,
+    settings: ArrangementSettings,
+) -> TranscriptionStats:
     """音声の最も強いピッチ軌跡をトランペットMIDIへ変換する。"""
     try:
         import librosa
@@ -40,9 +52,13 @@ def transcribe_melody(source: Path, destination: Path) -> None:
         valid_rms = rms[rms > 0]
         reference_rms = float(np.percentile(valid_rms, 90)) if valid_rms.size else 1.0
 
-        for pitch, start, end, level in extract_note_regions(
+        regions = extract_note_regions(
             frequencies, voiced, times, rms
-        ):
+        )
+        for pitch, start, end, level in regions:
+            pitch = normalize_midi_pitch(
+                pitch, settings.minimum_midi_note, settings.maximum_midi_note
+            )
             velocity = max(55, min(120, round(105 * level / reference_rms)))
             trumpet.notes.append(
                 pretty_midi.Note(
@@ -53,10 +69,20 @@ def transcribe_melody(source: Path, destination: Path) -> None:
             raise ConversionError("主旋律として扱える音程を検出できませんでした。")
         midi.instruments.append(trumpet)
         midi.write(str(destination))
+        return TranscriptionStats(len(regions), len(trumpet.notes))
     except ConversionError:
         raise
     except Exception as exc:
         raise ConversionError(f"主旋律の採譜に失敗しました: {exc}") from exc
+
+
+def normalize_midi_pitch(pitch: int, minimum: int, maximum: int) -> int:
+    """音名を保ったまま、トランペット向け音域へオクターブ移動する。"""
+    while pitch < minimum:
+        pitch += 12
+    while pitch > maximum:
+        pitch -= 12
+    return max(minimum, min(maximum, pitch))
 
 
 def extract_note_regions(

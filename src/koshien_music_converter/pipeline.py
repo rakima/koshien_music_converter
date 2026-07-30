@@ -75,7 +75,7 @@ class ConversionPipeline:
                     ffmpeg, "-y", "-hide_banner", "-loglevel", "warning",
                     "-i", str(stems / "vocals.wav"), "-i", str(stems / "other.wav"),
                     "-filter_complex",
-                    "[0:a]volume=1.2[v];[1:a]volume=0.65[o];"
+                    "[0:a]volume=1.2[v];[1:a]volume=0.15[o];"
                     "[v][o]amix=inputs=2:normalize=0,alimiter=limit=0.95",
                     str(melody_source),
                 ],
@@ -84,7 +84,17 @@ class ConversionPipeline:
 
             midi_path = work / "melody.mid"
             self._notify(60, "主旋律を採譜しています")
-            transcribe_melody(melody_source, midi_path)
+            transcription = transcribe_melody(
+                melody_source, midi_path, config.arrangement
+            )
+            self._log(
+                "MIDIノート数: "
+                f"抽出={transcription.raw_note_count}, "
+                f"補正後={transcription.final_note_count}; "
+                "音域="
+                f"{config.arrangement.minimum_midi_note}"
+                f"〜{config.arrangement.maximum_midi_note}"
+            )
             brass = work / "brass.wav"
             self._notify(72, "主旋律をトランペット音へ変換しています")
             run_command(
