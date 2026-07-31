@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import sys
-import tempfile
 from collections.abc import Callable
 from pathlib import Path
+from shutil import copy2
+import sys
+import tempfile
 
 from .commands import require_command, run_command
 from .config import ConversionConfig
@@ -78,37 +79,58 @@ class ConversionPipeline:
                     ffmpeg, "-y", "-hide_banner", "-loglevel", "warning",
                     "-i", str(stems / "vocals.wav"), "-i", str(stems / "other.wav"),
                     "-filter_complex",
-                    "[0:a]volume=1.2[v];[1:a]volume=0.15[o];"
+                    "[0:a]volume=1.2[v];[1:a]volume=0.65[o];"
                     "[v][o]amix=inputs=2:normalize=0,alimiter=limit=0.95",
                     str(melody_source),
                 ],
                 self._log,
             )
 
-            midi_path = work / "melody.mid"
+            raw_midi = work / "melody_raw.mid"
+            processed_midi = work / "melody_processed.mid"
             self._notify(60, "主旋律を採譜しています")
             transcription = transcribe_melody(
-                melody_source, midi_path, config.arrangement, bpm
+                melody_source,
+                raw_midi,
+                processed_midi,
+                config.arrangement,
+                bpm,
             )
             self._log(
-                "MIDIノート数: "
-                f"元={transcription.raw_note_count}, "
-                f"同音統合後={transcription.merged_note_count}, "
-                f"短音削除後={transcription.cleaned_note_count}, "
-                f"最終={transcription.final_note_count}; "
-                "音域="
-                f"{config.arrangement.minimum_midi_note}"
-                f"〜{config.arrangement.maximum_midi_note}; "
-                f"平均長={transcription.average_note_duration:.2f}秒, "
-                f"最短長={transcription.minimum_note_duration:.2f}秒, "
-                f"最大長={transcription.maximum_note_duration:.2f}秒, "
-                f"フレーズ数={transcription.phrase_count}, 同時発音数=1"
+                "抽出直後MIDI: "
+                f"ノート数={transcription.raw.note_count}, "
+                f"最低音={transcription.raw.minimum_pitch}, "
+                f"最高音={transcription.raw.maximum_pitch}, "
+                f"音域幅={transcription.raw.pitch_range}, "
+                f"平均長={transcription.raw.average_note_duration:.3f}秒, "
+                f"最短長={transcription.raw.minimum_note_duration:.3f}秒, "
+                f"最長長={transcription.raw.maximum_note_duration:.3f}秒, "
+                f"毎秒ノート数={transcription.raw.notes_per_second:.2f}"
             )
-            brass = work / "brass.wav"
-            self._notify(72, "主旋律をトランペット音へ変換しています")
+            self._log(
+                "後処理後MIDI: "
+                f"ノート数={transcription.processed.note_count}, "
+                f"削除={transcription.processing.removed_note_count}, "
+                f"統合={transcription.processing.merged_note_count}, "
+                f"音高変更={transcription.processing.pitch_changed_note_count}, "
+                f"オクターブ移動={transcription.processing.octave_shifted_note_count}, "
+                f"平均長={transcription.processed.average_note_duration:.3f}秒, "
+                f"最低音={transcription.processed.minimum_pitch}, "
+                f"最高音={transcription.processed.maximum_pitch}"
+            )
+            raw_brass = work / "output_raw_melody.wav"
+            brass = work / "output_processed_melody.wav"
+            self._notify(70, "比較用のrawラッパ音源を生成しています")
             run_command(
                 build_fluidsynth_command(
-                    fluidsynth, config.soundfont_path, midi_path, brass
+                    fluidsynth, config.soundfont_path, raw_midi, raw_brass
+                ),
+                self._log,
+            )
+            self._notify(74, "後処理後のラッパ音源を生成しています")
+            run_command(
+                build_fluidsynth_command(
+                    fluidsynth, config.soundfont_path, processed_midi, brass
                 ),
                 self._log,
             )
@@ -142,17 +164,40 @@ class ConversionPipeline:
                 f"目標={config.arrangement.target_loudness_lufs:.1f} LUFS, "
                 f"ピーク={config.arrangement.target_peak_dbfs:.1f} dBFS"
             )
+            final_mix = work / "final_mix.wav"
             run_command(
                 [
                     ffmpeg, "-y", "-hide_banner", "-loglevel", "warning",
                     "-i", str(brass), "-i", str(cheer_drums),
                     "-filter_complex", mix_filter,
                     "-map", "[out]", "-t", str(config.duration),
-                    "-codec:a", "libmp3lame", "-q:a", "2",
+                    "-codec:a", "pcm_s16le", str(final_mix),
+                ],
+                self._log,
+            )
+            run_command(
+                [
+                    ffmpeg, "-y", "-hide_banner", "-loglevel", "warning",
+                    "-i", str(final_mix), "-codec:a", "libmp3lame", "-q:a", "2",
                     str(config.output_path),
                 ],
                 self._log,
             )
+            if config.arrangement.save_debug_artifacts:
+                debug = config.output_path.parent / "debug" / config.output_path.stem
+                debug.mkdir(parents=True, exist_ok=True)
+                for source, name in (
+                    (melody_source, "vocal_or_melody_source.wav"),
+                    (raw_midi, "melody_raw.mid"),
+                    (processed_midi, "melody_processed.mid"),
+                    (raw_brass, "output_raw_melody.wav"),
+                    (brass, "output_processed_melody.wav"),
+                    (brass, "trumpet_only.wav"),
+                    (cheer_drums, "drums_only.wav"),
+                    (final_mix, "final_mix.wav"),
+                ):
+                    copy2(source, debug / name)
+                self._log(f"デバッグ成果物: {debug}")
             self._verify_output(ffmpeg, config)
         self._notify(100, f"完了: {config.output_path}")
 
