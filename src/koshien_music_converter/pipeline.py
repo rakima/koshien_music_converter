@@ -92,14 +92,17 @@ class ConversionPipeline:
             )
             self._log(
                 "MIDIノート数: "
-                f"抽出={transcription.raw_note_count}, "
-                f"補正後={transcription.final_note_count}; "
+                f"元={transcription.raw_note_count}, "
+                f"同音統合後={transcription.merged_note_count}, "
+                f"短音削除後={transcription.cleaned_note_count}, "
+                f"最終={transcription.final_note_count}; "
                 "音域="
                 f"{config.arrangement.minimum_midi_note}"
                 f"〜{config.arrangement.maximum_midi_note}; "
                 f"平均長={transcription.average_note_duration:.2f}秒, "
+                f"最短長={transcription.minimum_note_duration:.2f}秒, "
                 f"最大長={transcription.maximum_note_duration:.2f}秒, "
-                "同時発音数=1"
+                f"フレーズ数={transcription.phrase_count}, 同時発音数=1"
             )
             brass = work / "brass.wav"
             self._notify(72, "主旋律をトランペット音へ変換しています")
@@ -117,11 +120,16 @@ class ConversionPipeline:
             self._notify(82, "応援団専用の太鼓を生成しています")
             cheer_drums = work / "cheer_drums.wav"
             drum_events = generate_cheer_drums(
-                cheer_drums, config.duration, bpm
+                cheer_drums,
+                config.duration,
+                bpm,
+                cymbal_interval_bars=config.arrangement.cymbal_interval_bars,
             )
             self._log(
                 f"応援太鼓: BPM={bpm:.1f}, "
-                f"パターン=ドン ドン ドドン ドン, イベント数={drum_events}"
+                "パターン=大太鼓 小太鼓 大太鼓 小太鼓, "
+                f"シンバル={config.arrangement.cymbal_interval_bars}小節ごと, "
+                f"イベント数={drum_events}"
             )
 
             self._notify(90, "ブラスと応援太鼓をミックスしています")

@@ -60,11 +60,31 @@ def test_arrangement_rejects_invalid_midi_range() -> None:
 
 
 def test_arrangement_rejects_invalid_note_gate() -> None:
-    with pytest.raises(ConversionError, match="ゲート比率"):
-        ArrangementSettings(note_gate_ratio=0).validate()
+    with pytest.raises(ConversionError, match="ノート短縮率"):
+        ArrangementSettings(note_shortening_ratio=0).validate()
 
 
 def test_arrangement_rejects_excessive_tone_boost() -> None:
     with pytest.raises(ConversionError, match="ラッパ中域"):
         ArrangementSettings(brass_presence_db=13).validate()
+
+
+def test_arrangement_rejects_invalid_same_note_tolerance() -> None:
+    with pytest.raises(ConversionError, match="同音判定"):
+        ArrangementSettings(same_note_pitch_tolerance=13).validate()
+
+
+def test_arrangement_rejects_zero_note_density() -> None:
+    with pytest.raises(ConversionError, match="最大ノート数"):
+        ArrangementSettings(maximum_notes_per_beat=0).validate()
+
+
+def test_arrangement_rejects_shorter_phrase_ending() -> None:
+    with pytest.raises(ConversionError, match="延長率"):
+        ArrangementSettings(phrase_end_extension_ratio=0.9).validate()
+
+
+def test_arrangement_rejects_zero_cymbal_interval() -> None:
+    with pytest.raises(ConversionError, match="シンバル間隔"):
+        ArrangementSettings(cymbal_interval_bars=0).validate()
 

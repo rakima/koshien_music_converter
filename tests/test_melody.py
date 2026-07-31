@@ -2,10 +2,14 @@ import pytest
 
 from koshien_music_converter.config import ArrangementSettings
 from koshien_music_converter.melody import (
-    articulate_note_regions,
+    adjust_note_lengths,
     extract_note_regions,
+    merge_similar_notes,
     normalize_midi_pitch,
-    remove_ornamental_turns,
+    quantize_note_regions,
+    remove_decorative_notes,
+    process_note_regions,
+    shape_note_phrases,
     simplify_note_regions,
 )
 
@@ -57,7 +61,7 @@ def test_simplify_notes_removes_short_notes_and_merges_pitch_wobble() -> None:
     )
 
     assert simplified == [
-        (71, 0.0, 0.5, 0.7),
+        (71, 0.0, 0.25, 0.7),
         (64, 0.5, 0.75, 0.6),
     ]
     assert len(simplified) < len(regions)
@@ -74,18 +78,22 @@ def test_simplified_notes_use_eighth_note_grid() -> None:
     assert end - start == pytest.approx(0.5)
 
 
-def test_articulate_notes_adds_gap_and_caps_long_notes() -> None:
-    settings = ArrangementSettings(note_gate_ratio=0.6, maximum_note_beats=1)
+def test_adjust_note_lengths_preserves_melody_and_caps_long_notes() -> None:
+    settings = ArrangementSettings(
+        note_shortening_ratio=0.9,
+        maximum_note_beats=2,
+        minimum_note_duration=0.1,
+    )
 
-    articulated = articulate_note_regions(
+    adjusted = adjust_note_lengths(
         [(72, 0.0, 2.0, 1.0), (74, 2.0, 2.25, 0.8)],
         bpm=120,
         settings=settings,
     )
 
-    assert articulated[0][2] == pytest.approx(0.3)
-    assert articulated[1][2] == pytest.approx(2.15)
-    assert articulated[0][2] < articulated[1][1]
+    assert adjusted[0][2] == pytest.approx(0.9)
+    assert adjusted[1][2] == pytest.approx(2.225)
+    assert adjusted[0][2] < adjusted[1][1]
 
 
 def test_remove_short_returning_ornament() -> None:
@@ -96,11 +104,35 @@ def test_remove_short_returning_ornament() -> None:
         (79, 0.75, 1.0, 0.7),
     ]
 
-    reduced = remove_ornamental_turns(notes, grid=0.25)
+    reduced = remove_decorative_notes(
+        notes,
+        bpm=120,
+        settings=ArrangementSettings(ornament_max_duration_beats=0.5),
+    )
 
     assert reduced == [
         (72, 0.0, 0.75, 0.9),
         (79, 0.75, 1.0, 0.7),
+    ]
+
+
+def test_short_note_is_absorbed_into_close_following_note() -> None:
+    reduced = remove_decorative_notes(
+        [
+            (72, 0.0, 0.08, 0.4),
+            (73, 0.08, 0.4, 0.8),
+            (79, 0.5, 0.8, 0.7),
+        ],
+        bpm=120,
+        settings=ArrangementSettings(
+            minimum_note_duration=0.1,
+            same_note_pitch_tolerance=1,
+        ),
+    )
+
+    assert reduced == [
+        (73, 0.0, 0.4, 0.8),
+        (79, 0.5, 0.8, 0.7),
     ]
 
 
@@ -119,3 +151,110 @@ def test_simplified_notes_are_monophonic() -> None:
         current[2] <= following[1]
         for current, following in zip(simplified, simplified[1:], strict=False)
     )
+
+
+def test_merge_similar_notes_keeps_deliberate_repetition() -> None:
+    settings = ArrangementSettings(
+        same_note_pitch_tolerance=1,
+        same_note_merge_max_gap_beats=0.25,
+        maximum_merged_note_beats=2,
+    )
+    notes = [
+        (72, 0.0, 0.2, 0.6),
+        (73, 0.22, 0.4, 0.8),
+        (72, 0.7, 0.9, 0.7),
+    ]
+
+    merged = merge_similar_notes(notes, bpm=120, settings=settings)
+
+    assert merged == [
+        (72, 0.0, 0.4, 0.8),
+        (72, 0.7, 0.9, 0.7),
+    ]
+
+
+def test_quantize_uses_sixteenth_only_for_short_phrase() -> None:
+    settings = ArrangementSettings(
+        allow_sixteenth_notes=True,
+        maximum_notes_per_beat=4,
+    )
+
+    quantized = quantize_note_regions(
+        [(72, 0.13, 0.26, 0.8), (74, 0.51, 0.89, 0.9)],
+        bpm=120,
+        settings=settings,
+    )
+
+    assert quantized[0][1:] == pytest.approx((0.125, 0.25, 0.8))
+    assert quantized[1][1:] == pytest.approx((0.5, 1.0, 0.9))
+
+
+def test_quantize_limits_notes_per_beat() -> None:
+    quantized = quantize_note_regions(
+        [
+            (72, 0.00, 0.13, 0.8),
+            (74, 0.13, 0.26, 0.8),
+            (76, 0.26, 0.39, 0.8),
+        ],
+        bpm=120,
+        settings=ArrangementSettings(
+            allow_sixteenth_notes=True,
+            maximum_notes_per_beat=2,
+        ),
+    )
+
+    assert len(quantized) == 2
+
+
+def test_quantize_skips_sixteenth_below_minimum_duration() -> None:
+    quantized = quantize_note_regions(
+        [(72, 0.09, 0.18, 0.8)],
+        bpm=180,
+        settings=ArrangementSettings(
+            minimum_note_duration=0.1,
+            allow_sixteenth_notes=True,
+        ),
+    )
+
+    assert quantized[0][2] - quantized[0][1] == pytest.approx(1 / 6)
+
+
+def test_shape_phrases_extends_ending_and_preserves_rest() -> None:
+    settings = ArrangementSettings(
+        phrase_end_extension_ratio=1.3,
+        phrase_boundary_gap_beats=0.75,
+        minimum_phrase_rest_beats=0.35,
+    )
+
+    shaped, phrase_count = shape_note_phrases(
+        [
+            (72, 0.0, 0.4, 0.8),
+            (74, 0.5, 0.9, 0.8),
+            (76, 1.5, 1.9, 0.8),
+        ],
+        bpm=120,
+        settings=settings,
+    )
+
+    assert phrase_count == 2
+    assert shaped[1][2] == pytest.approx(1.02)
+    assert shaped[2][2] == pytest.approx(2.02)
+    assert shaped[2][1] - shaped[1][2] >= 0.175 - 1e-9
+
+
+def test_process_note_regions_reports_each_reduction_stage() -> None:
+    _notes, stats = process_note_regions(
+        [
+            (72, 0.0, 0.2, 0.5),
+            (73, 0.21, 0.4, 0.8),
+            (76, 0.41, 0.46, 0.4),
+            (79, 0.5, 0.8, 0.9),
+        ],
+        bpm=120,
+        settings=ArrangementSettings(),
+    )
+
+    assert stats.raw_note_count == 4
+    assert stats.merged_note_count == 3
+    assert stats.cleaned_note_count == 2
+    assert stats.quantized_note_count == 2

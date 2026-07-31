@@ -5,18 +5,29 @@ import soundfile as sf
 from koshien_music_converter.drums import build_cheer_pattern, generate_cheer_drums
 
 
-def test_cheer_pattern_uses_don_don_dodon_don_rhythm() -> None:
+def test_cheer_pattern_uses_stable_four_beat_rhythm() -> None:
     events = build_cheer_pattern(duration=2, bpm=120)
 
     assert events
     assert {event.kind for event in events} == {
         "odaiko",
         "odaiko_accent",
+        "snare",
         "cymbal",
     }
-    assert [
-        event.time for event in events if event.kind.startswith("odaiko")
-    ] == [0, 0.5, 1.0, 1.25, 1.5]
+    assert [(event.time, event.kind) for event in events] == [
+        (0.0, "odaiko_accent"),
+        (0.5, "snare"),
+        (1.0, "odaiko"),
+        (1.5, "snare"),
+        (0.0, "cymbal"),
+    ]
+
+
+def test_cymbal_is_added_every_four_bars() -> None:
+    events = build_cheer_pattern(duration=10, bpm=120, cymbal_interval_bars=4)
+
+    assert [event.time for event in events if event.kind == "cymbal"] == [0, 8]
 
 
 def test_generated_cheer_drums_are_not_silent(tmp_path: Path) -> None:
