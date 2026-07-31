@@ -1,10 +1,33 @@
 AGENTS.md
 .venv/
+.venv-*/
 __pycache__/
 *.py[cod]
 .pytest_cache/
 *.egg-info/
 build/
 dist/
+
+# Local models, separated stems, and generated media
+.cache/
+models/
+separated/
+debug/
 output/
 *.wav
+*.mp3
+*.mid
+*.midi
+*.sf2
+*.log
+
+# External tools and downloaded archives
+*.exe
+*.zip
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
