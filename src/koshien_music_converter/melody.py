@@ -7,38 +7,50 @@ from pathlib import Path
 from .config import ArrangementSettings
 from .errors import ConversionError, DependencyError
 
+NoteRegion = tuple[int, float, float, float]
+
 
 @dataclass(frozen=True)
-class TranscriptionStats:
-    raw_note_count: int
-    merged_note_count: int
-    cleaned_note_count: int
-    final_note_count: int
+class MelodyStats:
+    note_count: int
+    minimum_pitch: int
+    maximum_pitch: int
     average_note_duration: float
     minimum_note_duration: float
     maximum_note_duration: float
-    phrase_count: int
+    notes_per_second: float
+
+    @property
+    def pitch_range(self) -> int:
+        return self.maximum_pitch - self.minimum_pitch
 
 
 @dataclass(frozen=True)
-class SimplificationStats:
-    raw_note_count: int
+class ProcessingStats:
+    removed_note_count: int
     merged_note_count: int
-    cleaned_note_count: int
-    quantized_note_count: int
+    pitch_changed_note_count: int
+    octave_shifted_note_count: int
+
+
+@dataclass(frozen=True)
+class TranscriptionResult:
+    raw: MelodyStats
+    processed: MelodyStats
+    processing: ProcessingStats
 
 
 def transcribe_melody(
     source: Path,
-    destination: Path,
+    raw_destination: Path,
+    processed_destination: Path,
     settings: ArrangementSettings,
     bpm: float,
-) -> TranscriptionStats:
-    """音声の最も強いピッチ軌跡をトランペットMIDIへ変換する。"""
+) -> TranscriptionResult:
+    """初期版相当のpyin抽出結果と、最小後処理後のMIDIを保存する。"""
     try:
         import librosa
         import numpy as np
-        import pretty_midi
     except ImportError as exc:
         raise DependencyError(
             "主旋律抽出ライブラリを読み込めません。pip install -e . を実行してください。"
@@ -62,57 +74,28 @@ def transcribe_melody(
         rms = librosa.feature.rms(
             y=audio, frame_length=frame_length, hop_length=hop_length
         )[0]
-        midi = pretty_midi.PrettyMIDI()
-        trumpet = pretty_midi.Instrument(program=56, name="Trumpet")
         valid_rms = rms[rms > 0]
         reference_rms = float(np.percentile(valid_rms, 90)) if valid_rms.size else 1.0
-
-        regions = extract_note_regions(
-            frequencies, voiced, times, rms, minimum_duration=0.04
+        raw_notes = extract_note_regions(
+            frequencies,
+            voiced,
+            times,
+            rms,
+            minimum_duration=settings.raw_minimum_note_duration,
         )
-        simplified_regions, simplification = process_note_regions(
-            regions, bpm=bpm, settings=settings
-        )
-        articulated_regions = adjust_note_lengths(
-            simplified_regions, bpm=bpm, settings=settings
-        )
-        final_regions, phrase_count = shape_note_phrases(
-            articulated_regions, bpm=bpm, settings=settings
-        )
-        trumpet.control_changes.extend(
-            [
-                pretty_midi.ControlChange(
-                    number=73, value=settings.brass_attack_controller, time=0
-                ),
-                pretty_midi.ControlChange(
-                    number=72, value=settings.brass_release_controller, time=0
-                ),
-            ]
-        )
-        for pitch, start, end, level in final_regions:
-            velocity = max(
-                settings.minimum_brass_velocity,
-                min(127, round(120 * level / reference_rms)),
-            )
-            trumpet.notes.append(
-                pretty_midi.Note(
-                    velocity=velocity, pitch=pitch, start=start, end=end
-                )
-            )
-        if not trumpet.notes:
+        if not raw_notes:
             raise ConversionError("主旋律として扱える音程を検出できませんでした。")
-        midi.instruments.append(trumpet)
-        midi.write(str(destination))
-        durations = [end - start for _pitch, start, end, _level in final_regions]
-        return TranscriptionStats(
-            raw_note_count=len(regions),
-            merged_note_count=simplification.merged_note_count,
-            cleaned_note_count=simplification.cleaned_note_count,
-            final_note_count=len(final_regions),
-            average_note_duration=sum(durations) / len(durations),
-            minimum_note_duration=min(durations),
-            maximum_note_duration=max(durations),
-            phrase_count=phrase_count,
+        write_trumpet_midi(raw_notes, raw_destination, settings, reference_rms)
+        processed_notes, processing = process_note_regions(
+            raw_notes, bpm=bpm, settings=settings
+        )
+        write_trumpet_midi(
+            processed_notes, processed_destination, settings, reference_rms
+        )
+        return TranscriptionResult(
+            raw=calculate_melody_stats(raw_notes),
+            processed=calculate_melody_stats(processed_notes),
+            processing=processing,
         )
     except ConversionError:
         raise
@@ -120,82 +103,106 @@ def transcribe_melody(
         raise ConversionError(f"主旋律の採譜に失敗しました: {exc}") from exc
 
 
-def normalize_midi_pitch(pitch: int, minimum: int, maximum: int) -> int:
-    """音名を保ったまま、トランペット向け音域へオクターブ移動する。"""
-    while pitch < minimum:
-        pitch += 12
-    while pitch > maximum:
-        pitch -= 12
-    return max(minimum, min(maximum, pitch))
-
-
-def simplify_note_regions(
-    regions: list[tuple[int, float, float, float]],
-    *,
-    bpm: float,
+def write_trumpet_midi(
+    notes: list[NoteRegion],
+    destination: Path,
     settings: ArrangementSettings,
-) -> list[tuple[int, float, float, float]]:
-    simplified, _stats = process_note_regions(
-        regions, bpm=bpm, settings=settings
+    reference_rms: float,
+) -> None:
+    try:
+        import pretty_midi
+    except ImportError as exc:
+        raise DependencyError("pretty-midiを読み込めません。") from exc
+    midi = pretty_midi.PrettyMIDI()
+    trumpet = pretty_midi.Instrument(program=56, name="Trumpet")
+    trumpet.control_changes.extend(
+        [
+            pretty_midi.ControlChange(
+                number=73, value=settings.brass_attack_controller, time=0
+            ),
+            pretty_midi.ControlChange(
+                number=72, value=settings.brass_release_controller, time=0
+            ),
+        ]
     )
-    return simplified
+    for pitch, start, end, level in notes:
+        velocity = max(
+            settings.minimum_brass_velocity,
+            min(127, round(120 * level / max(reference_rms, 1e-9))),
+        )
+        trumpet.notes.append(
+            pretty_midi.Note(velocity=velocity, pitch=pitch, start=start, end=end)
+        )
+    midi.instruments.append(trumpet)
+    midi.write(str(destination))
 
 
 def process_note_regions(
-    regions: list[tuple[int, float, float, float]],
+    regions: list[NoteRegion],
     *,
     bpm: float,
     settings: ArrangementSettings,
-) -> tuple[list[tuple[int, float, float, float]], SimplificationStats]:
-    """揺れの多い採譜結果を応援ラッパ向けの単純なノート列へする。"""
-    normalized = [
-        (
-            normalize_midi_pitch(
-                pitch, settings.minimum_midi_note, settings.maximum_midi_note
-            ),
-            start,
-            end,
-            level,
+) -> tuple[list[NoteRegion], ProcessingStats]:
+    """音高推移を保ち、個別に有効化された安全な処理だけを適用する。"""
+    notes = list(regions)
+    removed = 0
+    merged = 0
+    if settings.enable_short_note_removal:
+        before = len(notes)
+        notes = remove_extremely_short_notes(
+            notes, settings.extreme_short_note_duration
         )
-        for pitch, start, end, level in regions
-    ]
-    merged = merge_similar_notes(normalized, bpm=bpm, settings=settings)
-    cleaned = remove_decorative_notes(merged, bpm=bpm, settings=settings)
-    quantized = quantize_note_regions(cleaned, bpm=bpm, settings=settings)
-    return quantized, SimplificationStats(
-        raw_note_count=len(regions),
-        merged_note_count=len(merged),
-        cleaned_note_count=len(cleaned),
-        quantized_note_count=len(quantized),
+        removed = before - len(notes)
+    if settings.enable_exact_note_merge:
+        before = len(notes)
+        notes = merge_exact_same_notes(
+            notes, settings.exact_note_merge_max_gap_seconds
+        )
+        merged = before - len(notes)
+    if settings.enable_start_quantization:
+        notes = quantize_note_starts(
+            notes,
+            bpm=bpm,
+            subdivision=settings.quantize_subdivision,
+            maximum_shift=settings.maximum_quantize_shift_seconds,
+        )
+    shifted: list[NoteRegion] = []
+    octave_shifted = 0
+    for pitch, start, end, level in notes:
+        normalized = normalize_midi_pitch(
+            pitch, settings.minimum_midi_note, settings.maximum_midi_note
+        )
+        octave_shifted += normalized != pitch
+        shifted.append((normalized, start, end, level))
+    return shifted, ProcessingStats(
+        removed_note_count=removed,
+        merged_note_count=merged,
+        pitch_changed_note_count=0,
+        octave_shifted_note_count=octave_shifted,
     )
 
 
-def merge_similar_notes(
-    notes: list[tuple[int, float, float, float]],
-    *,
-    bpm: float,
-    settings: ArrangementSettings,
-) -> list[tuple[int, float, float, float]]:
-    """短い間隔で続く同音・近似音を、明確な連打を残しながら統合する。"""
+def remove_extremely_short_notes(
+    notes: list[NoteRegion], minimum_duration: float
+) -> list[NoteRegion]:
+    return [note for note in notes if note[2] - note[1] >= minimum_duration]
+
+
+def merge_exact_same_notes(
+    notes: list[NoteRegion], maximum_gap: float
+) -> list[NoteRegion]:
+    """完全な同音で、重複またはごく短い空白だけを統合する。"""
     if not notes:
         return []
-    maximum_gap = 60 / bpm * settings.same_note_merge_max_gap_beats
-    maximum_duration = 60 / bpm * settings.maximum_merged_note_beats
     merged = [notes[0]]
-
     for pitch, start, end, level in notes[1:]:
         previous_pitch, previous_start, previous_end, previous_level = merged[-1]
         gap = start - previous_end
-        combined_end = max(previous_end, end)
-        if (
-            abs(pitch - previous_pitch) <= settings.same_note_pitch_tolerance
-            and gap <= maximum_gap
-            and combined_end - previous_start <= maximum_duration
-        ):
+        if pitch == previous_pitch and gap <= maximum_gap:
             merged[-1] = (
                 previous_pitch,
                 previous_start,
-                combined_end,
+                max(previous_end, end),
                 max(previous_level, level),
             )
         else:
@@ -203,239 +210,53 @@ def merge_similar_notes(
     return merged
 
 
-def remove_decorative_notes(
-    notes: list[tuple[int, float, float, float]],
+def quantize_note_starts(
+    notes: list[NoteRegion],
     *,
     bpm: float,
-    settings: ArrangementSettings,
-) -> list[tuple[int, float, float, float]]:
-    """短音を前後関係から吸収し、孤立した装飾音だけを削除する。"""
-    working = list(notes)
-    reduced: list[tuple[int, float, float, float]] = []
-    index = 0
-    ornament_limit = 60 / bpm * settings.ornament_max_duration_beats
-
-    while index < len(working):
-        current = working[index]
-        following = working[index + 1] if index + 1 < len(working) else None
-        previous = reduced[-1] if reduced else None
-        duration = current[2] - current[1]
-        returns_to_previous = (
-            previous is not None
-            and following is not None
-            and abs(previous[0] - following[0])
-            <= settings.same_note_pitch_tolerance
-            and abs(previous[0] - current[0])
-            > settings.same_note_pitch_tolerance
-            and duration <= ornament_limit
-        )
-
-        if returns_to_previous:
-            assert previous is not None and following is not None
-            reduced[-1] = (
-                previous[0],
-                previous[1],
-                following[2],
-                max(previous[3], following[3]),
-            )
-            index += 2
-            continue
-
-        if duration < settings.minimum_note_duration:
-            if (
-                previous is not None
-                and abs(previous[0] - current[0])
-                <= settings.same_note_pitch_tolerance
-            ):
-                reduced[-1] = (
-                    previous[0],
-                    previous[1],
-                    current[2],
-                    max(previous[3], current[3]),
-                )
-            elif (
-                following is not None
-                and abs(following[0] - current[0])
-                <= settings.same_note_pitch_tolerance
-            ):
-                working[index + 1] = (
-                    following[0],
-                    current[1],
-                    following[2],
-                    max(current[3], following[3]),
-                )
-            index += 1
-            continue
-
-        reduced.append(current)
-        index += 1
-    return reduced
-
-
-def quantize_note_regions(
-    notes: list[tuple[int, float, float, float]],
-    *,
-    bpm: float,
-    settings: ArrangementSettings,
-) -> list[tuple[int, float, float, float]]:
-    """8分・4分音符を中心に、短いフレーズだけ16分音符を許可する。"""
-    beat = 60 / bpm
-    eighth = beat / settings.quantize_subdivision
-    sixteenth = beat / 4
-    duration_candidates = [eighth, beat, beat * 2, beat * 3]
-    if settings.allow_sixteenth_notes:
-        duration_candidates.insert(0, sixteenth)
-
-    candidates: list[tuple[int, float, float, float]] = []
+    subdivision: int,
+    maximum_shift: float,
+) -> list[NoteRegion]:
+    """開始位置だけを軽く丸め、音価・音高・順序は維持する。"""
+    grid = 60 / bpm / subdivision
+    quantized: list[NoteRegion] = []
+    previous_start = -math.inf
     for pitch, start, end, level in notes:
-        source_duration = end - start
-        use_sixteenth_grid = (
-            settings.allow_sixteenth_notes
-            and sixteenth >= settings.minimum_note_duration
-            and source_duration < eighth * 0.75
-        )
-        start_grid = sixteenth if use_sixteenth_grid else eighth
-        quantized_start = round(start / start_grid) * start_grid
-        allowed_durations = [
-            duration
-            for duration in duration_candidates
-            if duration >= settings.minimum_note_duration
-        ]
-        if not allowed_durations:
-            allowed_durations = [settings.minimum_note_duration]
-        quantized_duration = min(
-            allowed_durations,
-            key=lambda duration: (abs(duration - source_duration), -duration),
-        )
-        candidates.append(
-            (
-                pitch,
-                quantized_start,
-                quantized_start + quantized_duration,
-                level,
-            )
-        )
-
-    density_limited: list[tuple[int, float, float, float]] = []
-    for note in candidates:
-        recent_starts = [
-            existing[1]
-            for existing in density_limited
-            if note[1] - beat < existing[1] <= note[1]
-        ]
-        if len(recent_starts) >= settings.maximum_notes_per_beat:
-            continue
-        density_limited.append(note)
-
-    monophonic: list[tuple[int, float, float, float]] = []
-    for note in density_limited:
-        pitch, start, end, level = note
-        if monophonic and start < monophonic[-1][2]:
-            previous = monophonic[-1]
-            if start <= previous[1]:
-                if level > previous[3]:
-                    monophonic[-1] = note
-                continue
-            monophonic[-1] = (
-                previous[0], previous[1], start, previous[3]
-            )
-        monophonic.append((pitch, start, end, level))
-    return monophonic
+        candidate = round(start / grid) * grid
+        new_start = candidate if abs(candidate - start) <= maximum_shift else start
+        new_start = max(previous_start, new_start)
+        duration = end - start
+        quantized.append((pitch, new_start, new_start + duration, level))
+        previous_start = new_start
+    return quantized
 
 
-def adjust_note_lengths(
-    regions: list[tuple[int, float, float, float]],
-    *,
-    bpm: float,
-    settings: ArrangementSettings,
-) -> list[tuple[int, float, float, float]]:
-    """元音価を残しながら、Release前に小さな発音間隔を作る。"""
-    maximum_duration = 60 / bpm * settings.maximum_note_beats
-    adjusted: list[tuple[int, float, float, float]] = []
-    for pitch, start, end, level in regions:
-        source_duration = end - start
-        played_duration = (
-            min(source_duration, maximum_duration) * settings.note_shortening_ratio
-        )
-        played_duration = max(
-            min(source_duration, settings.minimum_note_duration),
-            played_duration,
-        )
-        adjusted.append((pitch, start, start + played_duration, level))
-    return adjusted
+def normalize_midi_pitch(pitch: int, minimum: int, maximum: int) -> int:
+    """音名を変えず、トランペット音域へオクターブ単位で移動する。"""
+    while pitch < minimum:
+        pitch += 12
+    while pitch > maximum:
+        pitch -= 12
+    return pitch
 
 
-def shape_note_phrases(
-    notes: list[tuple[int, float, float, float]],
-    *,
-    bpm: float,
-    settings: ArrangementSettings,
-) -> tuple[list[tuple[int, float, float, float]], int]:
-    """元の空白と音高跳躍から息継ぎ位置を作り、末尾音を少し伸ばす。"""
+def calculate_melody_stats(notes: list[NoteRegion]) -> MelodyStats:
     if not notes:
-        return [], 0
-    beat = 60 / bpm
-    boundary_gap = beat * settings.phrase_boundary_gap_beats
-    minimum_rest = beat * settings.minimum_phrase_rest_beats
-    maximum_phrase = beat * settings.maximum_phrase_beats
-    maximum_note = beat * settings.maximum_note_beats
-    shaped = list(notes)
-    phrase_start_index = 0
-    boundaries: list[int] = []
-
-    for index in range(1, len(shaped)):
-        previous = shaped[index - 1]
-        current = shaped[index]
-        gap = current[1] - previous[2]
-        phrase_duration = current[1] - shaped[phrase_start_index][1]
-        large_jump = (
-            index - phrase_start_index >= 4
-            and abs(current[0] - previous[0])
-            >= settings.phrase_pitch_jump_semitones
-        )
-        if (
-            gap >= boundary_gap
-            or phrase_duration >= maximum_phrase
-            or large_jump
-        ):
-            boundaries.append(index)
-            phrase_start_index = index
-
-    for boundary in boundaries:
-        shaped[boundary - 1] = _extend_phrase_end(
-            shaped[boundary - 1],
-            settings=settings,
-            maximum_note=maximum_note,
-            next_start=shaped[boundary][1],
-            minimum_rest=minimum_rest,
-        )
-    shaped[-1] = _extend_phrase_end(
-        shaped[-1],
-        settings=settings,
-        maximum_note=maximum_note,
+        return MelodyStats(0, 0, 0, 0, 0, 0, 0)
+    durations = [end - start for _pitch, start, end, _level in notes]
+    elapsed = max(end for _pitch, _start, end, _level in notes) - min(
+        start for _pitch, start, _end, _level in notes
     )
-    return shaped, len(boundaries) + 1
-
-
-def _extend_phrase_end(
-    note: tuple[int, float, float, float],
-    *,
-    settings: ArrangementSettings,
-    maximum_note: float,
-    next_start: float | None = None,
-    minimum_rest: float = 0,
-) -> tuple[int, float, float, float]:
-    pitch, start, end, level = note
-    duration = end - start
-    desired_end = min(
-        start + maximum_note,
-        start + duration * settings.phrase_end_extension_ratio,
+    pitches = [pitch for pitch, _start, _end, _level in notes]
+    return MelodyStats(
+        note_count=len(notes),
+        minimum_pitch=min(pitches),
+        maximum_pitch=max(pitches),
+        average_note_duration=sum(durations) / len(durations),
+        minimum_note_duration=min(durations),
+        maximum_note_duration=max(durations),
+        notes_per_second=len(notes) / elapsed if elapsed > 0 else 0,
     )
-    if next_start is not None:
-        rest_ceiling = next_start - minimum_rest
-        if rest_ceiling > start:
-            desired_end = min(desired_end, rest_ceiling)
-    return pitch, start, max(start + settings.minimum_note_duration, desired_end), level
 
 
 def extract_note_regions(
@@ -445,9 +266,9 @@ def extract_note_regions(
     levels: object,
     *,
     minimum_duration: float = 0.08,
-) -> list[tuple[int, float, float, float]]:
-    """フレーム単位のピッチを連続したMIDIノートへまとめる。"""
-    notes: list[tuple[int, float, float, float]] = []
+) -> list[NoteRegion]:
+    """初期版と同じ方法で、pyinのピッチ軌跡をMIDIノートへまとめる。"""
+    notes: list[NoteRegion] = []
     current_pitch: int | None = None
     start = 0.0
     last_time = 0.0
