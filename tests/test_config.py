@@ -64,6 +64,33 @@ def test_arrangement_rejects_invalid_note_gate() -> None:
         ArrangementSettings(note_shortening_ratio=0).validate()
 
 
+def test_melody_destructive_processing_is_disabled_by_default() -> None:
+    settings = ArrangementSettings()
+
+    assert not settings.enable_pitch_smoothing
+    assert not settings.enable_near_pitch_merge
+    assert not settings.enable_note_density_limit
+    assert not settings.enable_phrase_shaping
+    assert not settings.enable_note_length_adjustment
+    assert settings.save_debug_artifacts
+
+
+@pytest.mark.parametrize(
+    ("setting", "message"),
+    [
+        ({"raw_minimum_note_duration": -0.1}, "抽出時"),
+        ({"extreme_short_note_duration": -0.1}, "極短音"),
+        ({"maximum_quantize_shift_seconds": -0.1}, "最大移動"),
+        ({"exact_note_merge_max_gap_seconds": -0.1}, "完全同音"),
+    ],
+)
+def test_arrangement_rejects_invalid_minimal_processing_settings(
+    setting: dict[str, float], message: str
+) -> None:
+    with pytest.raises(ConversionError, match=message):
+        ArrangementSettings(**setting).validate()
+
+
 def test_arrangement_rejects_excessive_tone_boost() -> None:
     with pytest.raises(ConversionError, match="ラッパ中域"):
         ArrangementSettings(brass_presence_db=13).validate()

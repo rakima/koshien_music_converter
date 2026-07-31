@@ -14,8 +14,21 @@ class ArrangementSettings:
     maximum_midi_note: int = 84
     brass_volume: float = 1.15
     generated_drum_volume: float = 1.1
+    raw_minimum_note_duration: float = 0.08
+    extreme_short_note_duration: float = 0.03
+    quantize_subdivision: int = 4
+    maximum_quantize_shift_seconds: float = 0.04
+    exact_note_merge_max_gap_seconds: float = 0.03
+    enable_short_note_removal: bool = True
+    enable_exact_note_merge: bool = True
+    enable_start_quantization: bool = True
+    enable_pitch_smoothing: bool = False
+    enable_near_pitch_merge: bool = False
+    enable_note_density_limit: bool = False
+    enable_phrase_shaping: bool = False
+    enable_note_length_adjustment: bool = False
+    save_debug_artifacts: bool = True
     minimum_note_duration: float = 0.10
-    quantize_subdivision: int = 2
     allow_sixteenth_notes: bool = True
     maximum_notes_per_beat: int = 2
     same_note_pitch_tolerance: int = 1
@@ -47,10 +60,18 @@ class ArrangementSettings:
     def validate(self) -> None:
         if not 0 <= self.minimum_midi_note <= self.maximum_midi_note <= 127:
             raise ConversionError("MIDI音域設定は0〜127の範囲で指定してください。")
+        if self.raw_minimum_note_duration < 0:
+            raise ConversionError("抽出時の最小ノート長は0以上にしてください。")
+        if self.extreme_short_note_duration < 0:
+            raise ConversionError("極短音の削除基準は0以上にしてください。")
         if self.minimum_note_duration <= 0:
             raise ConversionError("最小ノート長は0より大きくしてください。")
         if self.quantize_subdivision not in (2, 4):
             raise ConversionError("量子化単位は8分音符（2）または16分音符（4）です。")
+        if self.maximum_quantize_shift_seconds < 0:
+            raise ConversionError("量子化の最大移動秒数は0以上にしてください。")
+        if self.exact_note_merge_max_gap_seconds < 0:
+            raise ConversionError("完全同音の統合間隔は0以上にしてください。")
         if self.maximum_notes_per_beat <= 0:
             raise ConversionError("1拍あたりの最大ノート数は1以上にしてください。")
         if not 0 <= self.same_note_pitch_tolerance <= 12:
