@@ -59,19 +59,12 @@ def test_arrangement_rejects_invalid_midi_range() -> None:
         ArrangementSettings(minimum_midi_note=80, maximum_midi_note=60).validate()
 
 
-def test_arrangement_rejects_invalid_note_gate() -> None:
-    with pytest.raises(ConversionError, match="ノート短縮率"):
-        ArrangementSettings(note_shortening_ratio=0).validate()
-
-
-def test_melody_destructive_processing_is_disabled_by_default() -> None:
+def test_only_minimal_melody_processing_is_enabled_by_default() -> None:
     settings = ArrangementSettings()
 
-    assert not settings.enable_pitch_smoothing
-    assert not settings.enable_near_pitch_merge
-    assert not settings.enable_note_density_limit
-    assert not settings.enable_phrase_shaping
-    assert not settings.enable_note_length_adjustment
+    assert settings.enable_short_note_removal
+    assert settings.enable_exact_note_merge
+    assert settings.enable_start_quantization
     assert settings.save_debug_artifacts
 
 
@@ -94,21 +87,6 @@ def test_arrangement_rejects_invalid_minimal_processing_settings(
 def test_arrangement_rejects_excessive_tone_boost() -> None:
     with pytest.raises(ConversionError, match="ラッパ中域"):
         ArrangementSettings(brass_presence_db=13).validate()
-
-
-def test_arrangement_rejects_invalid_same_note_tolerance() -> None:
-    with pytest.raises(ConversionError, match="同音判定"):
-        ArrangementSettings(same_note_pitch_tolerance=13).validate()
-
-
-def test_arrangement_rejects_zero_note_density() -> None:
-    with pytest.raises(ConversionError, match="最大ノート数"):
-        ArrangementSettings(maximum_notes_per_beat=0).validate()
-
-
-def test_arrangement_rejects_shorter_phrase_ending() -> None:
-    with pytest.raises(ConversionError, match="延長率"):
-        ArrangementSettings(phrase_end_extension_ratio=0.9).validate()
 
 
 def test_arrangement_rejects_zero_cymbal_interval() -> None:
